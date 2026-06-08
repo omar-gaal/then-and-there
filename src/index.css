@@ -1,0 +1,1 @@
+:root{--accent:#c65e3b;--background:#f2eee6;--ink:#20211d;--line:#d7d1c5;--muted:#6f7169;--panel:#f8f5ef;background:var(--background);color:var(--ink);font-family:Inter,system-ui,sans-serif;font-synthesis:none;text-rendering:optimizeLegibility}*{box-sizing:border-box}body{margin:0;min-width:320px}button,a{-webkit-tap-highlight-color:transparent}
