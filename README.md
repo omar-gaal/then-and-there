@@ -179,3 +179,5 @@ Keep commits small and clearly named so the team can review and combine work mor
 
 The current prototype downloads MediaPipe files and the hand model from external URLs. Confirm that the computer has an internet connection, then refresh the page.
 hello world
+
+hi.
