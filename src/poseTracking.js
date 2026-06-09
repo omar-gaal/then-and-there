@@ -83,7 +83,7 @@ export { clearCanvas, resizeCanvasToVideo }
 function logHipDebug(details) {
   const now = performance.now()
 
-  if (now - lastHipDebugAt < 500) {
+  if (now - lastHipDebugAt < 1500) {
     return
   }
 

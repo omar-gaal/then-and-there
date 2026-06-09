@@ -29,7 +29,7 @@ export function AmsterdamStage({
         ))}
       </div>
       <div className="runner-shadow" style={{ '--shadow-scale': Math.max(0.35, 1 - game.avatarY * 0.7), '--shadow-opacity': Math.max(0.18, 0.52 - game.avatarY * 0.3) }}></div>
-      <div className="runner" data-jumping={game.avatarY > 0.04 ? 'true' : 'false'} style={{ '--jump-y': `${game.avatarY * 800}px` }} aria-label="Player avatar">
+      <div className="runner" data-jumping={game.avatarY > 0.04 ? 'true' : 'false'} style={{ '--jump-y': `${game.avatarY * 1100}px` }} aria-label="Player avatar">
         <span className="runner-head"></span><span className="runner-body"></span><span className="runner-leg runner-leg-a"></span><span className="runner-leg runner-leg-b"></span>
       </div>
 

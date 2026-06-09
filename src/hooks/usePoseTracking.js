@@ -143,7 +143,7 @@ export function usePoseTracking() {
     }
     const now = performance.now();
 
-    if (now - lastTrackingDebugRef.current >= 250) {
+    if (now - lastTrackingDebugRef.current >= 1000) {
       lastTrackingDebugRef.current = now;
       console.log("[PoseDebug] Jump calculation", { baselineY: baselineRef.current, hipCount: reading.hipCount, hipY, jumpHeight, jumpLatched: jumpLatchedRef.current, landingThreshold: LANDING_THRESHOLD_PX, jumpThreshold: JUMP_THRESHOLD_PX });
     }

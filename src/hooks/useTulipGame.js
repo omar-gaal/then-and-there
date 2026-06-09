@@ -36,13 +36,13 @@ export function useTulipGame({ isCalibrated, isRunning, jumpCount }) {
       return;
     }
 
-    if (current.status !== "playing" || current.avatarY > 0.04) {
-      console.log("[TulipGameDebug] Jump rejected", { avatarY: current.avatarY, status: current.status });
+    if (current.status !== "playing") {
+      console.log("[TulipGameDebug] Jump ignored", { status: current.status });
       return;
     }
 
     pendingJumpRef.current = true;
-    console.log("[TulipGameDebug] Jump queued", { avatarY: current.avatarY, status: current.status });
+    console.log("[TulipGameDebug] Jump buffered", { avatarY: current.avatarY, waitingForLanding: current.avatarY > 0.04 });
   }, [commitGame, isCalibrated, isRunning]);
 
   const startRound = useCallback(() => {
@@ -77,11 +77,11 @@ export function useTulipGame({ isCalibrated, isRunning, jumpCount }) {
       const delta = Math.min((timestamp - lastFrame) / 1000, 0.05);
       lastFrameRef.current = timestamp;
 
-      const shouldJump = pendingJumpRef.current && current.avatarY <= 0.04
-    if (pendingJumpRef.current) {
-      console.log('[TulipGameDebug] Game loop consumed jump', { avatarY: current.avatarY, shouldJump })
-    };
-      pendingJumpRef.current = false;
+      const shouldJump = pendingJumpRef.current && current.avatarY <= 0.04;
+      if (shouldJump) {
+        pendingJumpRef.current = false;
+        console.log("[TulipGameDebug] Game loop launched buffered jump", { avatarY: current.avatarY });
+      }
       const startingVelocity = shouldJump
         ? JUMP_VELOCITY
         : current.avatarVelocity;
