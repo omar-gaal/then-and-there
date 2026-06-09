@@ -37,18 +37,40 @@ export function getHandGesture(landmarks) {
 export function movePuckWithGesture(gesture, puck) {
   const targetX = 1 - clamp(gesture.indexTip.x, 0.03, 0.97);
   const targetY = clamp(gesture.indexTip.y, 0.06, 0.94);
+  const scale = 0.96 + gesture.grip * 0.42;
+
+  movePuckToPoint(
+    {
+      x: targetX,
+      y: targetY,
+      scale,
+      rotation: gesture.rotation,
+      isGripped: gesture.isPinching
+    },
+    puck
+  );
+}
+
+export function movePuckToPoint(
+  { x, y, scale = 1, rotation = 0, isGripped = false },
+  puck
+) {
+  if (!puck) {
+    return;
+  }
+
   const currentX = Number(puck.dataset.x) || 0.5;
   const currentY = Number(puck.dataset.y) || 0.5;
-  const nextX = currentX + (targetX - currentX) * 0.26;
-  const nextY = currentY + (targetY - currentY) * 0.26;
+  const nextX = currentX + (clamp(x, 0.03, 0.97) - currentX) * 0.26;
+  const nextY = currentY + (clamp(y, 0.06, 0.94) - currentY) * 0.26;
 
   puck.dataset.x = String(nextX);
   puck.dataset.y = String(nextY);
   puck.style.setProperty("--x", `${nextX * 100}%`);
   puck.style.setProperty("--y", `${nextY * 100}%`);
-  puck.style.setProperty("--scale", String(0.96 + gesture.grip * 0.42));
-  puck.style.setProperty("--rotate", `${gesture.rotation}deg`);
-  puck.toggleAttribute("data-gripped", gesture.isPinching);
+  puck.style.setProperty("--scale", String(scale));
+  puck.style.setProperty("--rotate", `${rotation}deg`);
+  puck.toggleAttribute("data-gripped", isGripped);
   puck.removeAttribute("data-searching");
 }
 
