@@ -6,16 +6,18 @@ The project combines gesture-based play with cultural learning. After completing
 
 ## Current Prototype
 
-The current version is based on a webcam hand-tracking starter project. It already provides:
+The current version integrates the webcam hand-tracking starter with a playable Paris pastry-catching prototype. It already provides:
 
 - Browser webcam access
 - Real-time MediaPipe hand landmark detection
 - Index-finger position tracking
 - Pinch, open-hand, and pointing-up gesture detection
-- A puck that follows the visitor's hand
+- A pastry basket that follows the visitor's hand
+- Falling pastry targets with collision detection
+- A timed round with score, streaks, misses, and replay
 - A control panel showing live tracking data
 
-This prototype is the technical foundation for the Paris pastry-catching game and future gesture-controlled interactions.
+This playable prototype is the technical foundation for the Paris experience and future gesture-controlled interactions.
 
 ## Planned Experience
 
@@ -104,12 +106,12 @@ npm run lint      # Check the code with ESLint
 src/
   App.jsx                         Main prototype screen
   components/
-    TrackingStage.jsx             Webcam, landmark canvas, and controlled puck
+    TrackingStage.jsx             Webcam, landmark canvas, and controlled basket
     ControlPanel.jsx              Live gesture and confidence information
     StatusPill.jsx                Current tracking status
   hooks/
     useHandTracking.js            Camera and frame-tracking loop
-  gestures.js                     Gesture rules and puck movement
+  gestures.js                     Gesture rules and basket movement
   handTracking.js                 MediaPipe setup and drawing helpers
   App.css                         Component styles
   index.css                       Global styles
@@ -131,8 +133,8 @@ The most useful output for the Paris game is `gesture.indexTip`, which contains 
 
 ## Development Priorities
 
-1. Keep the existing hand-tracking prototype working reliably.
-2. Convert the puck interaction into the Paris pastry-catching game.
+1. Keep the integrated hand-tracking and pastry-catching prototype working reliably.
+2. Replace placeholder pastries with final Paris artwork and tune difficulty.
 3. Add reusable score, timer, and completion logic.
 4. Add pose tracking for Amsterdam and Copenhagen.
 5. Build the complete screen flow and connect all city experiences.
