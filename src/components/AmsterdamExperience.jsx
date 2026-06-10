@@ -101,7 +101,7 @@ export function AmsterdamExperience() {
     }
     const t = setTimeout(() => setPreRoundCountdown((c) => c - 1), 1000)
     return () => clearTimeout(t)
-  }, [preRoundCountdown])
+  }, [preRoundCountdown, startRound])
 
   function handleStopCamera() {
     resetRound()
