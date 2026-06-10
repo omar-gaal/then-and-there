@@ -8,7 +8,6 @@ export function AmsterdamStage({
   handCanvasRef,
   handIsReady,
   handWebcamRef,
-  hoverTarget,
   isCalibrated,
   isLoading,
   isRunning,
