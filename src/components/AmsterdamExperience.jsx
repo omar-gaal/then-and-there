@@ -37,7 +37,7 @@ export function AmsterdamExperience() {
       hoverStartRef.current = null
       setCountdown(null)
     }
-  }, [game.status])
+  }, [game.status, hand.resume])
 
   // Hover over zone → countdown → start camera (pre-game) or restart round (post-round)
   useEffect(() => {
