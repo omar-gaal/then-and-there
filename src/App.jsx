@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ControlPanel } from './components/ControlPanel'
 import { StatusPill } from './components/StatusPill'
 import { TrackingStage } from './components/TrackingStage'
@@ -9,6 +9,7 @@ import './App.css'
 
 function App() {
   const stageRef = useRef(null)
+  const [isSplashVisible, setIsSplashVisible] = useState(true)
   const {
     canvasRef,
     handleCameraError,
@@ -23,8 +24,31 @@ function App() {
   } = useHandTracking()
   const { game, startRound } = useCatchGame({ isRunning, puckRef, stageRef })
 
+  useEffect(() => {
+    const splashTimer = window.setTimeout(() => {
+      setIsSplashVisible(false)
+    }, 2200)
+
+    return () => window.clearTimeout(splashTimer)
+  }, [])
+
   function handlePointerAim(point) {
     movePuckToPoint({ ...point, scale: 1.02 }, puckRef.current)
+  }
+
+  if (isSplashVisible) {
+    return (
+      <main className="splash-screen" aria-label="Welcome screen">
+        <div className="splash-card" role="status" aria-live="polite">
+          <p className="splash-eyebrow">Then &amp; There</p>
+          <h1>Then & There </h1>
+          <p className="splash-copy">
+            Gamifying Europe
+          </p>
+          <span className="splash-loader" aria-hidden="true" />
+        </div>
+      </main>
+    )
   }
 
   return (
