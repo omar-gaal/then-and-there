@@ -8,6 +8,18 @@ const JUMP_VELOCITY = 1.8;
 const CLEAR_HEIGHT = 0.14;
 const TULIP_KINDS = ["red", "yellow", "pink", "purple"];
 
+const AMSTERDAM_FUN_FACTS = [
+  "The Netherlands grows over 4.3 billion tulip bulbs every year — about 80% of the world's total supply.",
+  "Amsterdam has more than 1,200 bridges, making it one of the most bridge-dense cities in Europe.",
+  "The tulip originally came from Central Asia and Turkey — Dutch traders brought it to the Netherlands in the 1600s.",
+  "During 'Tulip Mania' in 1637, a single tulip bulb could cost more than a canal house in Amsterdam.",
+  "Amsterdam's Keukenhof garden plants around 7 million flower bulbs each year, mostly tulips.",
+  "The Dutch export roughly €5.5 billion worth of cut flowers every year, with tulips leading the way.",
+  "Amsterdam has over 800,000 bicycles — more bikes than people in the city.",
+  "The narrowest house in Amsterdam is just 2.02 metres wide on the Singel canal.",
+];
+
+
 export function useTulipGame({ isCalibrated, isRunning, jumpCount }) {
   const animationRef = useRef(0);
   const gameRef = useRef(createReadyGame());
@@ -130,13 +142,21 @@ export function useTulipGame({ isCalibrated, isRunning, jumpCount }) {
       }
 
       const timeLeft = Math.max(0, current.timeLeft - delta);
-      const status = timeLeft <= 0 || lives <= 0 ? "finished" : "playing";
+      const ranOutOfTime = timeLeft <= 0;
+      const ranOutOfLives = lives <= 0;
+      const finishing = ranOutOfTime || ranOutOfLives;
+      const status = finishing ? "finished" : "playing";
+      const funFact =
+        ranOutOfTime && !current.funFact
+          ? AMSTERDAM_FUN_FACTS[Math.floor(Math.random() * AMSTERDAM_FUN_FACTS.length)]
+          : current.funFact ?? null;
 
       commitGame({
         ...current,
         avatarVelocity: landedVelocity,
         avatarY,
         cleared,
+        funFact,
         lives: Math.max(0, lives),
         obstacles: status === "playing" ? obstacles : [],
         score,
@@ -181,6 +201,7 @@ function createReadyGame() {
     avatarVelocity: 0,
     avatarY: 0,
     cleared: 0,
+    funFact: null,
     lives: STARTING_LIVES,
     obstacles: [],
     roundSeconds: ROUND_SECONDS,
