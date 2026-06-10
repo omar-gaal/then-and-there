@@ -83,7 +83,7 @@ export function AmsterdamExperience() {
         startRound()
       }
     }
-  }, [hand.fingerPos, pose.isRunning, pose.isLoading, game.status])
+  }, [hand.fingerPos, hand.stop, pose.isRunning, pose.isLoading, pose.startCamera, game.status, startRound])
 
   // After calibration completes, count down then auto-start the round
   useEffect(() => {
