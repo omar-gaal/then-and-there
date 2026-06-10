@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const ROUND_SECONDS = 45;
+const ROUND_SECONDS = 20;
 const STARTING_LIVES = 3;
 const PLAYER_X = 0.2;
 const GRAVITY = 2.3;
@@ -99,18 +99,24 @@ export function useTulipGame({ isCalibrated, isRunning, jumpCount }) {
           ...obstacle,
           x: obstacle.x - obstacle.speed * delta,
         };
-        const overlapsPlayer =
-          nextObstacle.x <= PLAYER_X + 0.045 &&
-          nextObstacle.x >= PLAYER_X - 0.055;
 
-        if (overlapsPlayer) {
-          if (avatarY >= CLEAR_HEIGHT) {
-            cleared += 1;
-            score += 100;
-          } else {
-            lives -= 1;
+        if (!nextObstacle.scored) {
+          const overlapsPlayer =
+            nextObstacle.x <= PLAYER_X + 0.045 &&
+            nextObstacle.x >= PLAYER_X - 0.055;
+
+          if (overlapsPlayer) {
+            nextObstacle.scored = true;
+            if (avatarY >= CLEAR_HEIGHT) {
+              cleared += 1;
+              score += 100;
+            } else {
+              lives -= 1;
+            }
           }
-        } else if (nextObstacle.x > -0.12) {
+        }
+
+        if (nextObstacle.x > -0.12) {
           obstacles.push(nextObstacle);
         }
       }

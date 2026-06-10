@@ -9,9 +9,11 @@ import {
 } from "../poseTracking";
 
 const CALIBRATION_FRAMES = 30;
-const JUMP_THRESHOLD_PX = 25;
-const LANDING_THRESHOLD_PX = 12;
 const JUMP_COOLDOWN_MS = 550;
+// Threshold as % of shoulder-to-hip distance so it works at any camera distance
+const JUMP_RATIO = 0.18;
+const LANDING_RATIO = 0.07;
+const FALLBACK_JUMP_PX = 14; // used if shoulders not visible during calibration
 
 const READY_POSE = {
   baselineY: null,
@@ -32,12 +34,13 @@ export function usePoseTracking() {
   const poseLandmarkerRef = useRef(null);
   const animationRef = useRef(0);
   const calibrationRef = useRef([]);
+  const bodyScaleReadingsRef = useRef([]);
+  const bodyScaleRef = useRef(null); // shoulder-to-hip px distance, set after calibration
   const baselineRef = useRef(null);
   const smoothedHipRef = useRef(null);
   const jumpLatchedRef = useRef(false);
   const lastJumpRef = useRef(0);
   const lastVideoTimeRef = useRef(-1);
-  const lastTrackingDebugRef = useRef(0);
 
   const [isRunning, setIsRunning] = useState(false);
   const [jumpCount, setJumpCount] = useState(0);
@@ -45,6 +48,8 @@ export function usePoseTracking() {
 
   function resetCalibration() {
     calibrationRef.current = [];
+    bodyScaleReadingsRef.current = [];
+    bodyScaleRef.current = null;
     baselineRef.current = null;
     smoothedHipRef.current = null;
     jumpLatchedRef.current = false;
@@ -66,13 +71,15 @@ export function usePoseTracking() {
     const canvas = canvasRef.current;
     const landmarker = poseLandmarkerRef.current;
 
-    if (!video || !canvas || !landmarker) {
-      return;
-    }
+    if (!video || !canvas || !landmarker) return;
 
     resizeCanvasToVideo(canvas, video);
 
-    if (hasNewVideoFrame(video, lastVideoTimeRef.current)) {
+    if (
+      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+      video.videoWidth > 0 &&
+      video.currentTime !== lastVideoTimeRef.current
+    ) {
       lastVideoTimeRef.current = video.currentTime;
       const results = landmarker.detectForVideo(video, performance.now());
       const landmarks = results.landmarks?.[0];
@@ -85,7 +92,7 @@ export function usePoseTracking() {
         setTracking((current) => ({
           ...current,
           confidence: 0,
-          label: "Step into view",
+          label: "Step into view — full body visible",
           mode: "searching",
         }));
       }
@@ -99,23 +106,54 @@ export function usePoseTracking() {
       setTracking((current) => ({
         ...current,
         confidence: 0,
-        label: "Keep hips visible",
+        label: "Show both hips to camera",
         mode: "searching",
       }));
       return;
     }
 
     const previousHip = smoothedHipRef.current ?? reading.y;
-    const hipY = previousHip + (reading.y - previousHip) * 0.3;
+    const hipY = previousHip + (reading.y - previousHip) * 0.5;
     smoothedHipRef.current = hipY;
 
+    // Calibration phase
     if (baselineRef.current === null) {
+      const runningAvg =
+        calibrationRef.current.length > 0
+          ? calibrationRef.current.reduce((s, v) => s + v, 0) / calibrationRef.current.length
+          : hipY;
+
+      if (Math.abs(hipY - runningAvg) > 30) {
+        calibrationRef.current = [];
+        setTracking({
+          ...READY_POSE,
+          confidence: reading.confidence,
+          hipCount: reading.hipCount,
+          hipY,
+          label: "Stand still to calibrate",
+          mode: "calibrating",
+        });
+        return;
+      }
+
       calibrationRef.current.push(hipY);
+
+      // Track shoulder-to-hip distance to set an adaptive jump threshold
+      if (reading.shoulderY !== null) {
+        const scale = hipY - reading.shoulderY; // positive: hips are below shoulders
+        if (scale > 10) bodyScaleReadingsRef.current.push(scale);
+      }
+
       const progress = calibrationRef.current.length / CALIBRATION_FRAMES;
 
       if (calibrationRef.current.length >= CALIBRATION_FRAMES) {
-        baselineRef.current = average(calibrationRef.current);
-        console.log("[PoseDebug] Calibration complete", { baselineY: baselineRef.current, hipCount: reading.hipCount });
+        baselineRef.current =
+          calibrationRef.current.reduce((s, v) => s + v, 0) / calibrationRef.current.length;
+        if (bodyScaleReadingsRef.current.length > 0) {
+          bodyScaleRef.current =
+            bodyScaleReadingsRef.current.reduce((s, v) => s + v, 0) / bodyScaleReadingsRef.current.length;
+          console.log('[PoseDebug] Body scale calibrated', { bodyScalePx: bodyScaleRef.current, jumpThresholdPx: bodyScaleRef.current * JUMP_RATIO });
+        }
       }
 
       setTracking({
@@ -126,40 +164,40 @@ export function usePoseTracking() {
         hipCount: reading.hipCount,
         hipY,
         isCalibrated: baselineRef.current !== null,
-        label:
-          baselineRef.current === null
-            ? "Stand still to calibrate"
-            : "Ready to jump",
+        label: baselineRef.current === null ? "Stand still to calibrate" : "Ready to jump",
         mode: baselineRef.current === null ? "calibrating" : "tracking",
       });
       return;
     }
 
+    // Jump detection phase — thresholds adapt to how far user stands from camera
+    const jumpThreshold = bodyScaleRef.current
+      ? Math.max(10, bodyScaleRef.current * JUMP_RATIO)
+      : FALLBACK_JUMP_PX;
+    const landingThreshold = bodyScaleRef.current
+      ? Math.max(5, bodyScaleRef.current * LANDING_RATIO)
+      : FALLBACK_JUMP_PX * 0.5;
+
     let jumpHeight = Math.max(0, baselineRef.current - hipY);
 
-    if (!jumpLatchedRef.current && jumpHeight < LANDING_THRESHOLD_PX) {
-      baselineRef.current += (hipY - baselineRef.current) * 0.025;
+    if (!jumpLatchedRef.current && jumpHeight < landingThreshold) {
+      baselineRef.current += (hipY - baselineRef.current) * 0.015;
       jumpHeight = Math.max(0, baselineRef.current - hipY);
     }
-    const now = performance.now();
 
-    if (now - lastTrackingDebugRef.current >= 1000) {
-      lastTrackingDebugRef.current = now;
-      console.log("[PoseDebug] Jump calculation", { baselineY: baselineRef.current, hipCount: reading.hipCount, hipY, jumpHeight, jumpLatched: jumpLatchedRef.current, landingThreshold: LANDING_THRESHOLD_PX, jumpThreshold: JUMP_THRESHOLD_PX });
-    }
+    const now = performance.now();
 
     if (
       !jumpLatchedRef.current &&
-      jumpHeight >= JUMP_THRESHOLD_PX &&
+      jumpHeight >= jumpThreshold &&
       now - lastJumpRef.current >= JUMP_COOLDOWN_MS
     ) {
       jumpLatchedRef.current = true;
       lastJumpRef.current = now;
-      console.log("[PoseDebug] JUMP TRIGGERED", { hipY, jumpHeight, threshold: JUMP_THRESHOLD_PX });
+      console.log('[PoseDebug] JUMP', { jumpHeight, jumpThreshold, bodyScale: bodyScaleRef.current });
       setJumpCount((count) => count + 1);
-    } else if (jumpLatchedRef.current && jumpHeight <= LANDING_THRESHOLD_PX) {
+    } else if (jumpLatchedRef.current && jumpHeight <= landingThreshold) {
       jumpLatchedRef.current = false;
-      console.log("[PoseDebug] Landing detected", { hipY, jumpHeight });
     }
 
     setTracking({
@@ -171,30 +209,21 @@ export function usePoseTracking() {
       isCalibrated: true,
       isJumping: jumpLatchedRef.current,
       jumpHeight,
-      label: jumpLatchedRef.current ? "Jump detected" : "Ready to jump",
+      jumpThreshold,
+      label: jumpLatchedRef.current ? "Jump detected!" : "Ready to jump",
       mode: "tracking",
     });
   }
 
   async function startCamera() {
-    if (isRunning || tracking.mode === "loading") {
-      return;
-    }
+    if (isRunning || tracking.mode === "loading") return;
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      setTracking({
-        ...READY_POSE,
-        label: "Camera unavailable",
-        mode: "error",
-      });
+      setTracking({ ...READY_POSE, label: "Camera unavailable", mode: "error" });
       return;
     }
 
-    setTracking({
-      ...READY_POSE,
-      label: "Loading pose model",
-      mode: "loading",
-    });
+    setTracking({ ...READY_POSE, label: "Loading pose model…", mode: "loading" });
 
     try {
       if (!poseLandmarkerRef.current) {
@@ -202,19 +231,10 @@ export function usePoseTracking() {
       }
       resetCalibration();
       setIsRunning(true);
-      setTracking({
-        ...READY_POSE,
-        label: "Step into view",
-        mode: "searching",
-      });
+      setTracking({ ...READY_POSE, label: "Step into view", mode: "searching" });
     } catch (error) {
       console.error(error);
-      stopCamera();
-      setTracking({
-        ...READY_POSE,
-        label: "Pose tracking failed",
-        mode: "error",
-      });
+      setTracking({ ...READY_POSE, label: "Pose tracking failed", mode: "error" });
     }
   }
 
@@ -250,16 +270,4 @@ export function usePoseTracking() {
     videoConstraints: POSE_VIDEO_CONSTRAINTS,
     webcamRef,
   };
-}
-
-function hasNewVideoFrame(video, lastVideoTime) {
-  return (
-    video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-    video.videoWidth > 0 &&
-    video.currentTime !== lastVideoTime
-  );
-}
-
-function average(values) {
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
