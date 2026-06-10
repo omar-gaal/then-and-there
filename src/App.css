@@ -591,6 +591,7 @@ h1 {
 .tulip-obstacle i:nth-child(1) { left: 8px; height: 55px; }
 .tulip-obstacle i:nth-child(2) { left: 29px; }
 .tulip-obstacle i:nth-child(3) { left: 51px; height: 48px; }
+.tulip-obstacle.is-red { --flower: #dc4f55; }
 .tulip-obstacle.is-yellow { --flower: #f1c941; }
 .tulip-obstacle.is-pink { --flower: #ec78a2; }
 .tulip-obstacle.is-purple { --flower: #8565b5; }
@@ -609,6 +610,9 @@ h1 {
 .runner span { position: absolute; display: block; background: #183e48; }
 .runner-head { top: 0; left: 15px; width: 24px; height: 24px; border-radius: 50%; }
 .runner-body { top: 25px; left: 18px; width: 18px; height: 48px; border-radius: 9px; }
+.runner-arm { top: 30px; left: 20px; width: 7px; height: 26px; border-radius: 6px; transform-origin: top center; }
+.runner-arm-a { transform: rotate(32deg); }
+.runner-arm-b { transform: rotate(-22deg); }
 .runner-leg { top: 67px; left: 20px; width: 8px; height: 38px; border-radius: 8px; transform-origin: top; }
 .runner-leg-a { transform: rotate(15deg); }
 .runner-leg-b { transform: rotate(-20deg); }
@@ -682,6 +686,125 @@ h1 {
   line-height: 1.45;
 }
 
+/* Jump bar */
+.jump-bar-wrap {
+  padding: 8px 0 4px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.jump-bar-label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.jump-bar-track {
+  position: relative;
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+
+.jump-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 60ms linear, background 60ms linear;
+}
+
+.jump-bar-threshold {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background: rgba(255,255,255,0.35);
+}
+
+/* Hover-to-start zone */
+.hover-zone {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  display: grid;
+  place-items: center;
+  margin: 4px 0 8px;
+}
+
+.hover-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.hover-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 5;
+}
+
+.hover-ring-fill {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 276.5;
+  stroke-dashoffset: calc(276.5 - var(--progress, 0));
+  transition: stroke-dashoffset 80ms linear;
+}
+
+.hover-start-btn {
+  position: relative;
+  z-index: 1;
+  width: 80px;
+  height: 80px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text-strong);
+  color: var(--button-text);
+  font: inherit;
+  font-size: 1.3rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.hover-start-btn:hover {
+  background: var(--teal-dark);
+  transform: scale(1.05);
+}
+
+.hover-hint {
+  margin: 0 !important;
+  font-size: 0.76rem !important;
+  opacity: 0.7;
+}
+
+/* Finger cursor dot */
+.hand-cursor {
+  position: absolute;
+  left: var(--cx);
+  top: var(--cy);
+  z-index: 8;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 220, 93, 0.9);
+  box-shadow: 0 0 0 4px rgba(255, 220, 93, 0.3);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: left 60ms linear, top 60ms linear;
+}
+
 @media (max-width: 880px) {
   .amsterdam-stage { min-height: 0; }
 }
@@ -721,30 +844,44 @@ h1 {
   transition: transform 45ms linear, background-color 45ms linear;
 }
 
+.pre-round-count {
+  font-size: 5rem !important;
+  line-height: 1 !important;
+}
+
 .runner[data-jumping="true"] {
-  filter: drop-shadow(0 18px 8px rgba(0,0,0,.14));
-  transform: rotate(-5deg) scale(1.06, .96);
+  filter: drop-shadow(0 28px 12px rgba(0,0,0,.10));
+  transform: rotate(-6deg);
 }
 
 .runner[data-jumping="true"] .runner-head {
-  transform: translate(3px, 5px);
+  transform: translate(3px, -2px) rotate(6deg);
 }
 
 .runner[data-jumping="true"] .runner-body {
-  transform: rotate(12deg) scaleY(.88);
+  transform: rotate(6deg) scaleY(1.1) translateY(-4px);
+}
+
+.runner[data-jumping="true"] .runner-arm-a {
+  transform: translate(-5px, -14px) rotate(-55deg);
+}
+
+.runner[data-jumping="true"] .runner-arm-b {
+  transform: translate(6px, -10px) rotate(62deg);
 }
 
 .runner[data-jumping="true"] .runner-leg-a {
-  transform: translate(-5px, -7px) rotate(72deg);
+  transform: translate(-4px, -6px) rotate(78deg);
 }
 
 .runner[data-jumping="true"] .runner-leg-b {
-  transform: translate(7px, -5px) rotate(-65deg);
+  transform: translate(8px, -4px) rotate(-68deg);
 }
 
 .runner,
 .runner-head,
 .runner-body,
+.runner-arm,
 .runner-leg {
   transition:
     bottom 32ms linear,
