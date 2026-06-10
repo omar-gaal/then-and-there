@@ -4,6 +4,8 @@
 
 The project combines gesture-based play with cultural learning. After completing each city challenge, the visitor receives a cultural fact about that city.
 
+something
+
 ## Current Prototype
 
 The current version integrates the webcam hand-tracking starter with a playable Paris pastry-catching prototype. It already provides:
