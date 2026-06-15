@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const ROUND_SECONDS = 45
 const MAX_MISSES = 6
 
-const TARGET_KINDS = ['croissant', 'macaron', 'baguette', 'eclair']
+const TARGET_KINDS = ['croissant', 'baguette', 'eclair']
 
 export function useCatchGame({ isRunning, puckRef, stageRef }) {
   const animationRef = useRef(0)
@@ -169,8 +169,8 @@ function createCatchItem(id, game) {
   return {
     id,
     kind: TARGET_KINDS[id % TARGET_KINDS.length],
-    size: randomBetween(34, 54),
-    speed: randomBetween(0.18 + paceBoost, 0.28 + paceBoost),
+    size: randomBetween(100, 200),
+    speed: randomBetween(0.50 + paceBoost, 0.28 + paceBoost),
     spin: randomBetween(-18, 18),
     spinSpeed: randomBetween(-120, 120),
     x: randomBetween(0.09, 0.91),
