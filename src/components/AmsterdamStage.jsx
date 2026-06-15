@@ -91,8 +91,8 @@ export function AmsterdamStage({
         <div className="round-overlay">
           <p>Amsterdam challenge</p>
           <strong>Jump the tulips</strong>
-          <HoverZone countdown={countdown} label={isLoading ? 'Loading…' : 'Start'} onClick={onStartCamera} disabled={isLoading} fingerPos={fingerPos} />
-          <p className="hover-hint">{fingerPos ? 'Hold still…' : 'Point your finger at the circle'}</p>
+          <HoverZone countdown={countdown} label={isLoading ? 'Loading…' : 'Start'} onClick={onStartCamera} disabled={isLoading} />
+          <p className="hover-hint">{fingerPos ? 'Hold still…' : 'Point your finger at the button'}</p>
         </div>
       )}
 
@@ -101,17 +101,20 @@ export function AmsterdamStage({
         <div className="round-overlay">
           <p>Canal run complete</p>
           <strong>{game.score} pts</strong>
-          <HoverZone countdown={countdown} label="Run again" onClick={onStartRound} fingerPos={fingerPos} />
-          <p className="hover-hint">{fingerPos ? 'Hold still…' : 'Point your finger at the circle'}</p>
+          {game.funFact && (
+            <div className="fun-fact-card">
+              <span className="fun-fact-label">🌷 Amsterdam fun fact</span>
+              <p className="fun-fact-text">{game.funFact}</p>
+            </div>
+          )}
+          <HoverZone countdown={countdown} label="Run again" onClick={onStartRound} />
+          <p className="hover-hint">{fingerPos ? 'Hold still…' : 'Point your finger at the button'}</p>
         </div>
       )}
 
-      {/* Finger cursor — visible during any hover state */}
+      {/* Finger cursor — ring animation lives on the cursor itself */}
       {showFingerCursor && (
-        <div
-          className="hand-cursor"
-          style={{ '--cx': `${fingerPos.x * 100}%`, '--cy': `${fingerPos.y * 100}%` }}
-        />
+        <FingerCursor fingerPos={fingerPos} countdown={countdown} />
       )}
 
       {isRunning && !isCalibrated && (
@@ -140,19 +143,31 @@ export function AmsterdamStage({
   )
 }
 
-function HoverZone({ countdown, label, onClick, disabled, fingerPos }) {
-  const progress = countdown !== null ? ((3 - countdown) / 3) * 276.5 : 0
+function HoverZone({ countdown, label, onClick, disabled }) {
   return (
     <div className="hover-zone">
-      <svg className="hover-ring" viewBox="0 0 100 100">
-        <circle className="hover-ring-track" cx="50" cy="50" r="44" />
-        {countdown !== null && (
-          <circle className="hover-ring-fill" cx="50" cy="50" r="44" style={{ '--progress': progress }} />
-        )}
-      </svg>
       <button type="button" className="hover-start-btn" onClick={onClick} disabled={disabled}>
         {disabled ? 'Loading…' : countdown !== null ? (countdown || '✓') : label}
       </button>
+    </div>
+  )
+}
+
+function FingerCursor({ fingerPos, countdown }) {
+  const isHovering = countdown !== null
+  const progress = isHovering ? ((3 - countdown) / 3) * 276.5 : 0
+  return (
+    <div
+      className="hand-cursor"
+      data-hovering={isHovering}
+      style={{ '--cx': `${fingerPos.x * 100}%`, '--cy': `${fingerPos.y * 100}%` }}
+    >
+      {isHovering && (
+        <svg className="cursor-ring" viewBox="0 0 100 100" aria-hidden="true">
+          <circle className="cursor-ring-track" cx="50" cy="50" r="44" />
+          <circle className="cursor-ring-fill" cx="50" cy="50" r="44" style={{ '--progress': progress }} />
+        </svg>
+      )}
     </div>
   )
 }

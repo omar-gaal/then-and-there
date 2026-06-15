@@ -333,6 +333,36 @@ h1 {
   transform: none;
 }
 
+.fun-fact-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 320px;
+  margin: 0 0 18px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  text-align: left;
+}
+
+.fun-fact-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--teal, #1fbbaa);
+}
+
+.fun-fact-text {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+  text-transform: none;
+}
+
 .control-panel {
   min-width: 0;
   border: 1px solid var(--line);
@@ -802,7 +832,39 @@ h1 {
   box-shadow: 0 0 0 4px rgba(255, 220, 93, 0.3);
   transform: translate(-50%, -50%);
   pointer-events: none;
-  transition: left 60ms linear, top 60ms linear;
+  transition: left 60ms linear, top 60ms linear, width 200ms ease, height 200ms ease, box-shadow 200ms ease;
+}
+
+.hand-cursor[data-hovering="true"] {
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 0 0 3px rgba(255, 220, 93, 0.5);
+}
+
+.cursor-ring {
+  position: absolute;
+  inset: -24px;
+  width: calc(100% + 48px);
+  height: calc(100% + 48px);
+  transform: rotate(-90deg);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.cursor-ring-track {
+  fill: none;
+  stroke: rgba(255, 220, 93, 0.22);
+  stroke-width: 4.5;
+}
+
+.cursor-ring-fill {
+  fill: none;
+  stroke: rgba(255, 220, 93, 1);
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-dasharray: 276.5;
+  stroke-dashoffset: calc(276.5 - var(--progress, 0));
+  transition: stroke-dashoffset 80ms linear;
 }
 
 @media (max-width: 880px) {
