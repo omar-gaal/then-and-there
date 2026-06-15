@@ -1,6 +1,7 @@
 import Webcam from 'react-webcam'
 
 export function AmsterdamStage({
+  activeHoverAction,
   canvasRef,
   countdown,
   fingerPos,
@@ -108,8 +109,8 @@ export function AmsterdamStage({
               <p className="fun-fact-text">{game.funFact}</p>
             </div>
           )}
-          <HoverZone countdown={countdown} label="Run again" onClick={onStartRound} />
-          <HoverZone countdown={countdown} label="Choose another game" onClick={onChooseAnotherGame} />
+          <HoverZone countdown={activeHoverAction === 'restart' ? countdown : null} label="Run again" onClick={onStartRound} />
+          <HoverZone countdown={activeHoverAction === 'choose' ? countdown : null} label="Choose another game" onClick={onChooseAnotherGame} />
           <p className="hover-hint">{fingerPos ? 'Hold still…' : 'Point your finger at the button'}</p>
         </div>
       )}

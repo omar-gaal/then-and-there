@@ -8,8 +8,12 @@ import { StatusPill } from './StatusPill'
 
 const AUTO_START_SECONDS = 3
 
-// The hover zone covers the lower-center of the stage where the start button lives
-const HOVER_TARGET = { x: 0.5, y: 0.62, radius: 0.22 }
+// The hover zones cover the lower-center of the stage where the action buttons live
+const START_HOVER_TARGET = { x: 0.5, y: 0.62, radius: 0.22 }
+const POST_ROUND_HOVER_TARGETS = {
+  restart: { x: 0.5, y: 0.56, radius: 0.13 },
+  choose: { x: 0.5, y: 0.72, radius: 0.13 },
+}
 const COUNTDOWN_SECONDS = 3
 
 export function AmsterdamExperience({ onChooseAnotherGame }) {
@@ -22,6 +26,7 @@ export function AmsterdamExperience({ onChooseAnotherGame }) {
   })
 
   const [countdown, setCountdown] = useState(null)
+  const [activeHoverAction, setActiveHoverAction] = useState(null)
   const hoverStartRef = useRef(null)
   const firedRef = useRef(false)
   const [preRoundCountdown, setPreRoundCountdown] = useState(null)
@@ -36,6 +41,7 @@ export function AmsterdamExperience({ onChooseAnotherGame }) {
       firedRef.current = false
       hoverStartRef.current = null
       setCountdown(null)
+      setActiveHoverAction(null)
     }
   }, [game.status, hand.resume])
 
@@ -46,6 +52,7 @@ export function AmsterdamExperience({ onChooseAnotherGame }) {
 
     if (!isPreGame && !isPostRound) {
       hoverStartRef.current = null
+      setActiveHoverAction(null)
       if (!isPostRound) firedRef.current = false
       setCountdown(null)
       return
@@ -53,19 +60,24 @@ export function AmsterdamExperience({ onChooseAnotherGame }) {
 
     if (!hand.fingerPos) {
       hoverStartRef.current = null
+      setActiveHoverAction(null)
       setCountdown(null)
       return
     }
 
-    const dist = Math.hypot(
-      hand.fingerPos.x - HOVER_TARGET.x,
-      hand.fingerPos.y - HOVER_TARGET.y,
-    )
+    const hoverAction = getHoverAction(hand.fingerPos, isPreGame)
 
-    if (dist > HOVER_TARGET.radius) {
+    if (!hoverAction) {
       hoverStartRef.current = null
+      setActiveHoverAction(null)
       setCountdown(null)
       return
+    }
+
+    if (hoverAction !== activeHoverAction) {
+      hoverStartRef.current = Date.now()
+      firedRef.current = false
+      setActiveHoverAction(hoverAction)
     }
 
     if (hoverStartRef.current === null) hoverStartRef.current = Date.now()
@@ -79,11 +91,13 @@ export function AmsterdamExperience({ onChooseAnotherGame }) {
       hand.stop()
       if (isPreGame) {
         pose.startCamera()
-      } else {
+      } else if (hoverAction === 'restart') {
         startRound()
+      } else {
+        onChooseAnotherGame()
       }
     }
-  }, [hand.fingerPos, hand.stop, pose.isRunning, pose.isLoading, pose.startCamera, game.status, startRound])
+  }, [activeHoverAction, hand.fingerPos, hand.stop, pose.isRunning, pose.isLoading, pose.startCamera, game.status, startRound, onChooseAnotherGame])
 
   // After calibration completes, count down then auto-start the round
   useEffect(() => {
@@ -107,6 +121,7 @@ export function AmsterdamExperience({ onChooseAnotherGame }) {
     resetRound()
     pose.stopCamera()
     setCountdown(null)
+    setActiveHoverAction(null)
     firedRef.current = false
   }
 
@@ -125,7 +140,6 @@ export function AmsterdamExperience({ onChooseAnotherGame }) {
           handCanvasRef={hand.canvasRef}
           handIsReady={hand.isReady}
           handWebcamRef={hand.webcamRef}
-          hoverTarget={HOVER_TARGET}
           isCalibrated={pose.tracking.isCalibrated}
           isLoading={pose.isLoading}
           isRunning={pose.isRunning}
@@ -133,6 +147,7 @@ export function AmsterdamExperience({ onChooseAnotherGame }) {
           onCameraReady={pose.handleCameraReady}
           onHandCameraReady={hand.handleCameraReady}
           onJump={triggerJump}
+          activeHoverAction={activeHoverAction}
           onChooseAnotherGame={onChooseAnotherGame}
           onStartCamera={pose.startCamera}
           onStartRound={startRound}
@@ -152,4 +167,25 @@ export function AmsterdamExperience({ onChooseAnotherGame }) {
       </section>
     </>
   )
+}
+
+function getHoverAction(fingerPos, isPreGame) {
+  if (isPreGame) {
+    return isInsideHoverTarget(fingerPos, START_HOVER_TARGET) ? 'start' : null
+  }
+
+  if (isInsideHoverTarget(fingerPos, POST_ROUND_HOVER_TARGETS.restart)) {
+    return 'restart'
+  }
+
+  if (isInsideHoverTarget(fingerPos, POST_ROUND_HOVER_TARGETS.choose)) {
+    return 'choose'
+  }
+
+  return null
+}
+
+function isInsideHoverTarget(fingerPos, target) {
+  const dist = Math.hypot(fingerPos.x - target.x, fingerPos.y - target.y)
+  return dist <= target.radius
 }
