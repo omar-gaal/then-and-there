@@ -41,25 +41,22 @@
 
 .splash-loader {
   display: block;
-  width: 84px;
-  height: 6px;
+  width: 72px;
+  height: 72px;
   margin: 22px auto 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--teal), var(--coral), var(--amber));
-  background-size: 200% 100%;
-  animation: splash-shift 1.1s ease-in-out infinite;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 22px rgba(31, 187, 166, 0.18));
+  animation: splash-globe 1.8s ease-in-out infinite;
 }
 
-@keyframes splash-shift {
+@keyframes splash-globe {
   0%,
   100% {
-    transform: scaleX(0.68);
-    filter: saturate(0.95);
+    transform: rotate(-8deg) scale(0.96);
   }
 
   50% {
-    transform: scaleX(1);
-    filter: saturate(1.1);
+    transform: rotate(8deg) scale(1);
   }
 }
 

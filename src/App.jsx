@@ -5,6 +5,7 @@ import { TrackingStage } from './components/TrackingStage'
 import { movePuckToPoint } from './gestures'
 import { useCatchGame } from './hooks/useCatchGame'
 import { useHandTracking } from './hooks/useHandTracking'
+import globeLoader from './assets/globe-svgrepo-com.svg'
 import './App.css'
 
 function App() {
@@ -45,7 +46,7 @@ function App() {
           <p className="splash-copy">
             Gamifying Europe
           </p>
-          <span className="splash-loader" aria-hidden="true" />
+          <img className="splash-loader" src={globeLoader} alt="" aria-hidden="true" />
         </div>
       </main>
     )
