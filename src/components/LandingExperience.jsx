@@ -91,10 +91,9 @@ export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
         <div className="landing-overlay">
           <div className="landing-card">
             <p className="eyebrow">Then & There</p>
-            <h1 className="landing-title">Find the gesture to begin</h1>
+            <h1 className="landing-title">Raise your hand!</h1>
             <p className="landing-copy">
-              Hold up a hand in front of the camera. This prompt only appears
-              after 10 seconds without a detected gesture.
+              Hold your hand in front of the camera to get started.
             </p>
             <StatusPill
               mode={isReady ? "searching" : "loading"}
