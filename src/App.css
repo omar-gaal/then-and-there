@@ -12,7 +12,11 @@
   border-radius: 20px;
   background:
     radial-gradient(circle at top, rgba(31, 187, 166, 0.12), transparent 44%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 248, 244, 0.96));
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(247, 248, 244, 0.96)
+    );
   box-shadow: var(--shadow);
   text-align: center;
 }
@@ -151,8 +155,7 @@ h1 {
   border-radius: 8px;
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    #151514;
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px), #151514;
   background-size: 36px 36px;
   box-shadow: var(--shadow);
 }
