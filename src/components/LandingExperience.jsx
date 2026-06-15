@@ -79,7 +79,10 @@ export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
       {fingerPos && (
         <div
           className="landing-cursor"
-          style={{ "--cx": `${fingerPos.x * 100}%`, "--cy": `${fingerPos.y * 100}%` }}
+          style={{
+            "--cx": `${fingerPos.x * 100}%`,
+            "--cy": `${fingerPos.y * 100}%`,
+          }}
           aria-hidden="true"
         />
       )}
@@ -104,7 +107,13 @@ export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
   );
 }
 
-function HoverChoiceButton({ className, fingerPos, label, onChoose, position }) {
+function HoverChoiceButton({
+  className,
+  fingerPos,
+  label,
+  onChoose,
+  position,
+}) {
   const [countdown, setCountdown] = useState(null);
   const hoverStartRef = useRef(null);
   const firedRef = useRef(false);
@@ -125,7 +134,9 @@ function HoverChoiceButton({ className, fingerPos, label, onChoose, position }) 
 
     function updateCountdown() {
       const elapsed = (Date.now() - hoverStartRef.current) / 1000;
-      const remaining = Math.ceil(Math.max(0, HOLD_TO_SELECT_SECONDS - elapsed));
+      const remaining = Math.ceil(
+        Math.max(0, HOLD_TO_SELECT_SECONDS - elapsed),
+      );
 
       setCountdown(remaining);
 
@@ -153,7 +164,7 @@ function HoverChoiceButton({ className, fingerPos, label, onChoose, position }) 
     >
       <span className="landing-button-label">{label}</span>
       <span className="landing-button-hint">
-        {isHovered && countdown !== null ? (countdown || "✓") : `Hold 3s`}
+        {isHovered && countdown !== null ? countdown || "✓" : `Hold 3s`}
       </span>
     </button>
   );

@@ -176,7 +176,11 @@
   height: 54px;
   border: 2px solid rgba(255, 255, 255, 0.86);
   border-radius: 999px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.02));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0.02)
+  );
   box-shadow:
     0 14px 28px rgba(0, 0, 0, 0.24),
     0 0 0 10px rgba(255, 255, 255, 0.08);
