@@ -13,6 +13,7 @@ export function AmsterdamStage({
   isRunning,
   onCameraError,
   onCameraReady,
+  onChooseAnotherGame,
   onHandCameraReady,
   onJump,
   onStartCamera,
@@ -108,6 +109,7 @@ export function AmsterdamStage({
             </div>
           )}
           <HoverZone countdown={countdown} label="Run again" onClick={onStartRound} />
+          <HoverZone countdown={countdown} label="Choose another game" onClick={onChooseAnotherGame} />
           <p className="hover-hint">{fingerPos ? 'Hold still…' : 'Point your finger at the button'}</p>
         </div>
       )}

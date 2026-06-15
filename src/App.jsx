@@ -18,7 +18,7 @@ function App() {
   if (screen === "amsterdam") {
     return (
       <main className="app-shell">
-        <AmsterdamExperience />
+        <AmsterdamExperience onChooseAnotherGame={() => setScreen("landing")} />
       </main>
     );
   }

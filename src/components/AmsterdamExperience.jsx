@@ -12,7 +12,7 @@ const AUTO_START_SECONDS = 3
 const HOVER_TARGET = { x: 0.5, y: 0.62, radius: 0.22 }
 const COUNTDOWN_SECONDS = 3
 
-export function AmsterdamExperience() {
+export function AmsterdamExperience({ onChooseAnotherGame }) {
   const pose = usePoseTracking()
   const hand = useHandHover()
   const { game, resetRound, startRound, triggerJump } = useTulipGame({
@@ -133,6 +133,7 @@ export function AmsterdamExperience() {
           onCameraReady={pose.handleCameraReady}
           onHandCameraReady={hand.handleCameraReady}
           onJump={triggerJump}
+          onChooseAnotherGame={onChooseAnotherGame}
           onStartCamera={pose.startCamera}
           onStartRound={startRound}
           preRoundCountdown={preRoundCountdown}
