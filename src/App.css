@@ -917,7 +917,7 @@ h1 {
   position: absolute;
   z-index: 4;
   left: 20%;
-  bottom: calc(28% + var(--jump-y));
+  bottom: 28%;
   width: 50px;
   height: 105px;
   filter: drop-shadow(0 9px 5px rgba(0, 0, 0, 0.25));
@@ -1247,7 +1247,7 @@ h1 {
     bottom: 25%;
   }
   .runner {
-    bottom: calc(26% + var(--jump-y));
+    bottom: 26%;
   }
 }
 
@@ -1286,8 +1286,18 @@ h1 {
 }
 
 .runner[data-jumping="true"] {
+  animation: runner-container-jump 1.75s ease-in-out;
   filter: drop-shadow(0 28px 12px rgba(0, 0, 0, 0.1));
-  transform: rotate(-6deg);
+}
+
+@keyframes runner-container-jump {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  50% {
+    transform: translateY(-300px) rotate(-6deg);
+  }
 }
 
 .runner[data-jumping="true"] .runner-head {
@@ -1328,5 +1338,15 @@ h1 {
 @media (max-width: 560px) {
   .runner-shadow {
     bottom: 25.5%;
+  }
+
+  @keyframes runner-container-jump {
+    0%,
+    100% {
+      transform: translateY(0) rotate(0);
+    }
+    50% {
+      transform: translateY(-240px) rotate(-6deg);
+    }
   }
 }
