@@ -1,31 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Webcam from "react-webcam";
-import { useHandTracking } from "../hooks/useHandTracking";
+import { useHandHover } from "../hooks/useHandHover";
 import { VIDEO_CONSTRAINTS } from "../handTracking";
 import { StatusPill } from "./StatusPill";
 
 const GESTURE_TIMEOUT_MS = 10_000;
+const HOLD_TO_SELECT_SECONDS = 3;
 
 export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
   const {
     canvasRef,
-    handleCameraError,
     handleCameraReady,
-    isLoading,
-    startCamera,
-    stopCamera,
-    tracking,
+    isReady,
+    fingerPos,
+    stop,
+    resume,
     webcamRef,
-  } = useHandTracking();
+  } = useHandHover();
   const [hasWaitedLongEnough, setHasWaitedLongEnough] = useState(false);
 
   useEffect(() => {
-    startCamera();
+    resume();
 
     return () => {
-      stopCamera();
+      stop();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [resume, stop]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -37,8 +37,7 @@ export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
     };
   }, []);
 
-  const isHandDetected = tracking.mode === "tracking";
-  const showGestureOverlay = hasWaitedLongEnough && !isHandDetected;
+  const showGestureOverlay = hasWaitedLongEnough && !fingerPos;
 
   return (
     <section className="landing-scene" aria-label="Then and There landing page">
@@ -54,7 +53,6 @@ export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
           audio={false}
           className="landing-webcam"
           onUserMedia={handleCameraReady}
-          onUserMediaError={handleCameraError}
           playsInline
           videoConstraints={VIDEO_CONSTRAINTS}
         />
@@ -62,21 +60,29 @@ export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
       </div>
 
       <div className="landing-actions" aria-label="Choose a city">
-        <button
-          type="button"
-          className="landing-button is-paris"
-          onClick={onChooseParis}
-        >
-          Paris
-        </button>
-        <button
-          type="button"
-          className="landing-button is-amsterdam"
-          onClick={onChooseAmsterdam}
-        >
-          Amsterdam
-        </button>
+        <HoverChoiceButton
+          className="is-paris"
+          fingerPos={fingerPos}
+          label="Paris"
+          onChoose={onChooseParis}
+          position={{ x: 0.36, y: 0.84 }}
+        />
+        <HoverChoiceButton
+          className="is-amsterdam"
+          fingerPos={fingerPos}
+          label="Amsterdam"
+          onChoose={onChooseAmsterdam}
+          position={{ x: 0.64, y: 0.84 }}
+        />
       </div>
+
+      {fingerPos && (
+        <div
+          className="landing-cursor"
+          style={{ "--cx": `${fingerPos.x * 100}%`, "--cy": `${fingerPos.y * 100}%` }}
+          aria-hidden="true"
+        />
+      )}
 
       {showGestureOverlay && (
         <div className="landing-overlay">
@@ -88,12 +94,67 @@ export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
               after 10 seconds without a detected gesture.
             </p>
             <StatusPill
-              mode={tracking.mode}
-              label={isLoading ? "Loading model" : tracking.label}
+              mode={isReady ? "searching" : "loading"}
+              label={isReady ? "Hover a city" : "Loading hand detector"}
             />
           </div>
         </div>
       )}
     </section>
+  );
+}
+
+function HoverChoiceButton({ className, fingerPos, label, onChoose, position }) {
+  const [countdown, setCountdown] = useState(null);
+  const hoverStartRef = useRef(null);
+  const firedRef = useRef(false);
+  const isHovered =
+    Boolean(fingerPos) &&
+    Math.hypot(fingerPos.x - position.x, fingerPos.y - position.y) <= 0.13;
+
+  useEffect(() => {
+    if (!isHovered) {
+      hoverStartRef.current = null;
+      firedRef.current = false;
+      return undefined;
+    }
+
+    if (hoverStartRef.current === null) {
+      hoverStartRef.current = Date.now();
+    }
+
+    function updateCountdown() {
+      const elapsed = (Date.now() - hoverStartRef.current) / 1000;
+      const remaining = Math.ceil(Math.max(0, HOLD_TO_SELECT_SECONDS - elapsed));
+
+      setCountdown(remaining);
+
+      if (remaining === 0 && !firedRef.current) {
+        firedRef.current = true;
+        onChoose();
+      }
+    }
+
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 100);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isHovered, onChoose]);
+
+  return (
+    <button
+      type="button"
+      className={`landing-button ${className}`}
+      onClick={onChoose}
+      data-countdown={countdown !== null ? countdown : undefined}
+      aria-label={`Choose ${label}`}
+    >
+      <span className="landing-button-label">{label}</span>
+      <span className="landing-button-hint">
+        {isHovered && countdown !== null ? (countdown || "✓") : `Hold 3s`}
+      </span>
+    </button>
   );
 }
