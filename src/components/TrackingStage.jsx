@@ -51,7 +51,7 @@ export function TrackingStage({
         />
       )}
       <canvas ref={canvasRef} className="landmark-layer" aria-hidden="true" />
-      <div className="catch-layer" aria-hidden="true">
+      <div className="" aria-hidden="true">
         {game.items.map((item) => (
           <div
             key={item.id}
@@ -63,7 +63,15 @@ export function TrackingStage({
               "--y": `${item.y * 100}%`
             }}
           >
-            <span></span>
+            <img
+              src={`/pastries/${item.kind}.png`}
+              alt={item.kind}
+              onError={(e) => {
+                if (e.currentTarget.src.endsWith('.png')) {
+                  e.currentTarget.src = `/pastries/${item.kind}.png`
+                }
+              }}
+            />
           </div>
         ))}
       </div>

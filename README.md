@@ -4,9 +4,11 @@
 
 The project combines gesture-based play with cultural learning. After completing each city challenge, the visitor receives a cultural fact about that city.
 
+something
+
 ## Current Prototype
 
-The current version integrates the webcam hand-tracking starter with a playable Paris pastry-catching prototype. It already provides:
+The current version includes playable Paris pastry-catching and Amsterdam tulip-jumping prototypes. It already provides:
 
 - Browser webcam access
 - Real-time MediaPipe hand landmark detection
@@ -15,9 +17,12 @@ The current version integrates the webcam hand-tracking starter with a playable 
 - A pastry basket that follows the visitor's hand
 - Falling pastry targets with collision detection
 - A timed round with score, streaks, misses, and replay
+- MediaPipe pose tracking with 30-frame hip calibration
+- Smoothed jump detection with landing and cooldown protection
+- An Amsterdam side-scroller with tulip collisions, lives, score, and replay
 - A control panel showing live tracking data
 
-This playable prototype is the technical foundation for the Paris experience and future gesture-controlled interactions.
+These playable prototypes are the technical foundation for the Paris and Amsterdam experiences.
 
 ## Planned Experience
 
@@ -58,12 +63,12 @@ Build a bicycle with hand gestures or ride it by alternating knee movements.
 
 - **React** for components, screens, and application state
 - **Vite** for the development server and production builds
-- **MediaPipe Tasks Vision** for real-time hand tracking
+- **MediaPipe Tasks Vision** for real-time hand and full-body pose tracking
 - **react-webcam** for browser camera access
 - **HTML Canvas** for landmarks and game visuals
 - **CSS** for the current interface and responsive layout
 
-Planned additions include pose tracking, routing, screen transitions, and city-specific game modules.
+Planned additions include screen transitions, final city artwork, and the Copenhagen game module.
 
 ## Getting Started
 
@@ -109,10 +114,16 @@ src/
     TrackingStage.jsx             Webcam, landmark canvas, and controlled basket
     ControlPanel.jsx              Live gesture and confidence information
     StatusPill.jsx                Current tracking status
+    AmsterdamExperience.jsx       Amsterdam feature composition
+    AmsterdamStage.jsx            Tulip side-scroller and pose preview
+    AmsterdamPanel.jsx            Jump and round metrics
   hooks/
-    useHandTracking.js            Camera and frame-tracking loop
+    useHandTracking.js            Hand camera and tracking loop
+    usePoseTracking.js            Pose camera, calibration, and jump detection
+    useTulipGame.js               Amsterdam game loop and collisions
   gestures.js                     Gesture rules and basket movement
-  handTracking.js                 MediaPipe setup and drawing helpers
+  handTracking.js                 MediaPipe hand setup and drawing helpers
+  poseTracking.js                 MediaPipe pose setup and drawing helpers
   App.css                         Component styles
   index.css                       Global styles
   main.jsx                        React entry point
@@ -135,8 +146,8 @@ The most useful output for the Paris game is `gesture.indexTip`, which contains 
 
 1. Keep the integrated hand-tracking and pastry-catching prototype working reliably.
 2. Replace placeholder pastries with final Paris artwork and tune difficulty.
-3. Add reusable score, timer, and completion logic.
-4. Add pose tracking for Amsterdam and Copenhagen.
+3. Test and tune Amsterdam jump sensitivity with the installation camera.
+4. Reuse pose tracking for Copenhagen pedalling.
 5. Build the complete screen flow and connect all city experiences.
 6. Add final visuals, animations, cultural facts, and polish.
 

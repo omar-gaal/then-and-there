@@ -51,45 +51,37 @@ function App() {
             aria-hidden="true"
           />
         </div>
+import { useState } from "react";
+import { AmsterdamExperience } from "./components/AmsterdamExperience";
+import { LandingExperience } from "./components/LandingExperience";
+import { ParisExperience } from "./components/ParisExperience";
+import "./App.css";
+
+function App() {
+  const [screen, setScreen] = useState("landing");
+
+  if (screen === "paris") {
+    return (
+      <main className="app-shell">
+        <ParisExperience />
+      </main>
+    );
+  }
+
+  if (screen === "amsterdam") {
+    return (
+      <main className="app-shell">
+        <AmsterdamExperience />
       </main>
     );
   }
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Paris prototype</p>
-          <h1>Paris Pastry Catch</h1>
-        </div>
-        <StatusPill mode={tracking.mode} label={tracking.label} />
-      </header>
-
-      <section className="workspace" aria-label="Paris pastry catching game">
-        <TrackingStage
-          canvasRef={canvasRef}
-          onCameraError={handleCameraError}
-          onCameraReady={handleCameraReady}
-          isLoading={isLoading}
-          isRunning={isRunning}
-          game={game}
-          onStartCamera={startCamera}
-          onPointerAim={handlePointerAim}
-          onStartRound={startRound}
-          puckRef={puckRef}
-          stageRef={stageRef}
-          webcamRef={webcamRef}
-        />
-
-        <ControlPanel
-          game={game}
-          isLoading={isLoading}
-          isRunning={isRunning}
-          onStartCamera={startCamera}
-          onStopCamera={stopCamera}
-          tracking={tracking}
-        />
-      </section>
+    <main className="app-shell landing-shell">
+      <LandingExperience
+        onChooseAmsterdam={() => setScreen("amsterdam")}
+        onChooseParis={() => setScreen("paris")}
+      />
     </main>
   );
 }
