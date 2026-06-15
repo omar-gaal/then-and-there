@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   READY_STATUS,
   clearCanvas,
@@ -19,7 +19,7 @@ export function useHandTracking() {
   const [isRunning, setIsRunning] = useState(false)
   const [tracking, setTracking] = useState(READY_STATUS)
 
-  function stopCamera() {
+  const stopCamera = useCallback(() => {
     cancelAnimationFrame(animationRef.current)
 
     animationRef.current = 0
@@ -29,7 +29,7 @@ export function useHandTracking() {
     showSearchingPuck(puckRef.current)
     setIsRunning(false)
     setTracking(READY_STATUS)
-  }
+  }, [])
 
   function runFrameLoop() {
     const video = webcamRef.current?.video
@@ -64,7 +64,7 @@ export function useHandTracking() {
     animationRef.current = requestAnimationFrame(runFrameLoop)
   }
 
-  async function startCamera() {
+  const startCamera = useCallback(async () => {
     if (isRunning || tracking.mode === 'loading') {
       return
     }
@@ -92,7 +92,7 @@ export function useHandTracking() {
       stopCamera()
       setTracking(createErrorStatus(getCameraErrorLabel(error)))
     }
-  }
+  }, [isRunning, stopCamera, tracking.mode])
 
   function handleCameraReady() {
     cancelAnimationFrame(animationRef.current)
