@@ -62,10 +62,18 @@ export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
       </div>
 
       <div className="landing-actions" aria-label="Choose a city">
-        <button type="button" className="landing-button is-paris" onClick={onChooseParis}>
+        <button
+          type="button"
+          className="landing-button is-paris"
+          onClick={onChooseParis}
+        >
           Paris
         </button>
-        <button type="button" className="landing-button is-amsterdam" onClick={onChooseAmsterdam}>
+        <button
+          type="button"
+          className="landing-button is-amsterdam"
+          onClick={onChooseAmsterdam}
+        >
           Amsterdam
         </button>
       </div>
