@@ -5,6 +5,17 @@ const MAX_MISSES = 6
 
 const TARGET_KINDS = ['croissant', 'baguette', 'eclair']
 
+const PARIS_FUN_FACTS = [
+  "Paris has over 1,800 bakeries — French law requires boulangeries to bake their bread on-site.",
+  "The croissant was actually invented in Austria, not France — Viennese bakers brought it to Paris in the 1830s.",
+  "France produces more than 320 officially recognised varieties of cheese.",
+  "The Eiffel Tower grows up to 15 cm taller in summer because the iron expands in heat.",
+  "Paris has 37 bridges crossing the Seine — the oldest, Pont Neuf, was completed in 1607.",
+  "There are around 6,000 km of underground tunnels beneath Paris, including the famous Catacombs.",
+  "A French baguette must weigh exactly 250 grams by law and can only contain four ingredients.",
+  "The Louvre is the world's most visited art museum, with over 9 million visitors a year.",
+]
+
 export function useCatchGame({ isRunning, puckRef, stageRef }) {
   const animationRef = useRef(0)
   const bestScoreRef = useRef(0)
@@ -90,11 +101,16 @@ export function useCatchGame({ isRunning, puckRef, stageRef }) {
       const status = timeLeft <= 0 || missed >= MAX_MISSES ? 'finished' : 'playing'
       const bestScore = Math.max(bestScoreRef.current, score)
       bestScoreRef.current = bestScore
+      const funFact =
+        status === 'finished' && !currentGame.funFact
+          ? PARIS_FUN_FACTS[Math.floor(Math.random() * PARIS_FUN_FACTS.length)]
+          : currentGame.funFact ?? null
 
       commitGame({
         ...currentGame,
         bestScore,
         caught,
+        funFact,
         items: status === 'playing' ? nextItems : [],
         missed,
         score,
@@ -145,6 +161,7 @@ function createReadyGame(bestScore = 0) {
   return {
     bestScore,
     caught: 0,
+    funFact: null,
     items: [],
     maxMisses: MAX_MISSES,
     missed: 0,

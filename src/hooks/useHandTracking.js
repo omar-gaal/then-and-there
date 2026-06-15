@@ -107,6 +107,10 @@ export function useHandTracking() {
 
   useEffect(() => {
     showSearchingPuck(puckRef.current);
+    // Preload model immediately so it's ready when hover fires
+    createHandLandmarker()
+      .then((lm) => { handLandmarkerRef.current = lm })
+      .catch(console.error)
 
     return () => {
       cancelAnimationFrame(animationRef.current);
