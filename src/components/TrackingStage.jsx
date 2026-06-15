@@ -1,5 +1,5 @@
-import Webcam from "react-webcam";
-import { VIDEO_CONSTRAINTS } from "../handTracking";
+import Webcam from "react-webcam"
+import { VIDEO_CONSTRAINTS } from "../handTracking"
 
 export function TrackingStage({
   canvasRef,
@@ -13,7 +13,7 @@ export function TrackingStage({
   onStartRound,
   puckRef,
   stageRef,
-  webcamRef
+  webcamRef,
 }) {
   function handlePointerMove(event) {
     const stage = stageRef.current
@@ -26,7 +26,7 @@ export function TrackingStage({
 
     onPointerAim({
       x: clamp((event.clientX - bounds.left) / bounds.width, 0.03, 0.97),
-      y: clamp((event.clientY - bounds.top) / bounds.height, 0.06, 0.94)
+      y: clamp((event.clientY - bounds.top) / bounds.height, 0.06, 0.94),
     })
   }
 
@@ -50,8 +50,10 @@ export function TrackingStage({
           videoConstraints={VIDEO_CONSTRAINTS}
         />
       )}
+
       <canvas ref={canvasRef} className="landmark-layer" aria-hidden="true" />
-      <div className="" aria-hidden="true">
+
+      <div className="catch-layer" aria-hidden="true">
         {game.items.map((item) => (
           <div
             key={item.id}
@@ -60,24 +62,29 @@ export function TrackingStage({
               "--size": `${item.size}px`,
               "--spin": `${item.spin}deg`,
               "--x": `${item.x * 100}%`,
-              "--y": `${item.y * 100}%`
+              "--y": `${item.y * 100}%`,
             }}
           >
             <img
               src={`/pastries/${item.kind}.png`}
               alt={item.kind}
               onError={(e) => {
-                if (e.currentTarget.src.endsWith('.png')) {
-                  e.currentTarget.src = `/pastries/${item.kind}.png`
+                const img = e.currentTarget
+                if (img.src.endsWith('.png')) {
+                  img.src = `/pastries/${item.kind}.svg`
+                } else if (!img.src.endsWith('fallback.svg')) {
+                  img.src = `/pastries/fallback.svg`
                 }
               }}
             />
           </div>
         ))}
       </div>
+
       <div ref={puckRef} className="control-object" role="img" aria-label="Pastry basket">
         <span></span>
       </div>
+
       {isRunning && (
         <div className="stage-hud" aria-live="polite">
           <span>{game.score}</span>
@@ -96,22 +103,20 @@ export function TrackingStage({
       {isRunning && game.status !== "playing" && (
         <div className="round-overlay">
           <p>{game.status === "finished" ? "Round complete" : "Pastry round"}</p>
-          <strong>
-            {game.status === "finished" ? `${game.score} pts` : "Ready"}
-          </strong>
+          <strong>{game.status === "finished" ? `${game.score} pts` : "Ready"}</strong>
           <button type="button" onClick={onStartRound}>
             {game.status === "finished" ? "Play again" : "Start round"}
           </button>
         </div>
       )}
     </div>
-  );
+  )
 }
 
 function formatTime(timeLeft) {
-  return `${Math.ceil(timeLeft)}s`;
+  return `${Math.ceil(timeLeft)}s`
 }
 
 function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
+  return Math.min(Math.max(value, min), max)
 }
