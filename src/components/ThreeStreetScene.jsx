@@ -6,8 +6,6 @@ import { getPartMapPosition } from '../game/mapMarkers'
 import {
   AVATAR_BASE_YAW,
   AVATAR_YAW_INFLUENCE,
-  BIKE_LANE_WIDTH,
-  BUILDING_X,
   INK,
   KEYBOARD_FORWARD_SPEED,
   KEYBOARD_MOVEMENT_SMOOTHING,
@@ -26,13 +24,9 @@ import {
   POSE_MIRROR_X,
   POSE_MIRROR_Y,
   POSE_MODE,
-  PROP_X,
   RETURN_FROM_LEFT_HEADING,
-  ROAD_WIDTH,
   SCREEN_LEFT_LOCAL_X,
   SCREEN_RIGHT_LOCAL_X,
-  SIDEWALK_WIDTH,
-  SIDEWALK_X,
   STREET_CENTER_Z,
   STREET_LENGTH,
   STREET_REPEAT,
@@ -44,6 +38,26 @@ const ARM_TURN_MIN_SAMPLE_SECONDS = 0.05
 const ARM_TURN_COOLDOWN_SECONDS = 0.8
 const ARM_TURN_SETTLE_THRESHOLD = 0.05
 const ARM_TURN_SETTLE_SECONDS = 0.2
+const PERFORMANCE_MODE = true
+const PERFORMANCE_STREET_DETAIL_Z = -68
+const VISUAL_ROAD_WIDTH = 5.6
+const VISUAL_SIDEWALK_WIDTH = 1.55
+const VISUAL_CURB_X = VISUAL_ROAD_WIDTH / 2 + 0.08
+const VISUAL_SIDEWALK_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH / 2
+const VISUAL_BUILDING_FACE_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH + 0.22
+const VISUAL_PROP_X = VISUAL_ROAD_WIDTH / 2 + 0.72
+const HOUSE_BLOCKS = [
+  { floors: 4, length: 2.35, shopKind: 'cafe', width: 1.35 },
+  { floors: 5, length: 1.7, width: 1.05 },
+  { floors: 3, length: 2.85, width: 1.55 },
+  { floors: 6, length: 1.95, width: 1.18 },
+  { floors: 4, length: 2.25, width: 1.32 },
+  { floors: 5, length: 1.55, width: 0.98 },
+  { floors: 4, length: 3.05, shopKind: 'flowers', width: 1.7 },
+  { floors: 6, length: 2.05, width: 1.2 },
+  { floors: 3, length: 2.55, width: 1.42 },
+  { floors: 5, length: 1.85, width: 1.08 },
+]
 export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, tracking }) {
   const mountRef = useRef(null)
   const trackingRef = useRef(tracking)
@@ -75,8 +89,8 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     }
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0xd7edf1)
-    scene.fog = new THREE.Fog(0xd7edf1, 42, 118)
+    scene.background = new THREE.Color(0xf3d8c8)
+    scene.fog = new THREE.Fog(0xf3d8c8, 34, 108)
 
     const camera = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 160)
     camera.position.set(0, 1.55, 8.8)
@@ -85,16 +99,16 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
-    renderer.shadowMap.enabled = true
+    renderer.shadowMap.enabled = !PERFORMANCE_MODE
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     mount.appendChild(renderer.domElement)
 
-    const ambient = new THREE.HemisphereLight(0xffffff, 0xf1d8bc, 2.7)
+    const ambient = new THREE.HemisphereLight(0xfff7ea, 0xd8c4ac, 2.9)
     scene.add(ambient)
 
-    const sun = new THREE.DirectionalLight(0xfff1d4, 2.2)
-    sun.position.set(-8, 12, 7)
-    sun.castShadow = true
+    const sun = new THREE.DirectionalLight(0xffe2bd, 1.85)
+    sun.position.set(-9, 10, 6)
+    sun.castShadow = !PERFORMANCE_MODE
     sun.shadow.mapSize.set(1536, 1536)
     sun.shadow.camera.left = -22
     sun.shadow.camera.right = 22
@@ -119,7 +133,7 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     buildLeftStreet(leftStreetA)
     buildLeftStreet(leftStreetB)
     leftStreetB.position.z = -STREET_REPEAT
-    leftStreet.add(leftStreetA, leftStreetB)
+      leftStreet.add(leftStreetA, leftStreetB)
     leftStreet.position.set(-5.4, 0, LEFT_STREET_ENTRANCE_Z)
     leftStreet.rotation.y = Math.PI * 0.5
     world.add(mainStreet, leftStreet)
@@ -187,6 +201,25 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     }
     scene.add(avatar)
     const animated = addAmbientDetails(scene)
+    const sceneStats = countSceneObjects(scene)
+    const perfState = {
+      avgAmbientMs: 0,
+      avgAvatarMs: 0,
+      avgFrameMs: 0,
+      avgHeadingMs: 0,
+      avgMapDebugMs: 0,
+      avgPickupMs: 0,
+      avgRenderMs: 0,
+      avgWorldMs: 0,
+      drawCalls: 0,
+      fps: 0,
+      lastFrameAt: performance.now(),
+      lastFpsAt: performance.now(),
+      meshCount: sceneStats.meshCount,
+      totalObjects: sceneStats.totalObjects,
+      visibleObjects: sceneStats.visibleObjects,
+      framesSinceFps: 0,
+    }
     const keys = {
       bend: false,
       forward: false,
@@ -210,8 +243,21 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     }
 
     function animate() {
+      const frameStartedAt = performance.now()
+      const frameDelta = frameStartedAt - perfState.lastFrameAt
+
+      perfState.lastFrameAt = frameStartedAt
+      perfState.avgFrameMs = smoothMetric(perfState.avgFrameMs, frameDelta)
+      perfState.framesSinceFps += 1
+      if (frameStartedAt - perfState.lastFpsAt >= 500) {
+        perfState.fps = (perfState.framesSinceFps * 1000) / (frameStartedAt - perfState.lastFpsAt)
+        perfState.framesSinceFps = 0
+        perfState.lastFpsAt = frameStartedAt
+      }
+
       const elapsed = (performance.now() - startedAt) / 1000
 
+      const ambientStartedAt = performance.now()
       for (let index = 0; index < animated.clouds.length; index += 1) {
         const cloud = animated.clouds[index]
 
@@ -227,16 +273,30 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
 
         tree.rotation.z = sway
       }
+      perfState.avgAmbientMs = smoothMetric(perfState.avgAmbientMs, performance.now() - ambientStartedAt)
 
+      const avatarStartedAt = performance.now()
       updateAvatar(avatar, avatarMotion, trackingRef.current, elapsed, keys)
+      perfState.avgAvatarMs = smoothMetric(perfState.avgAvatarMs, performance.now() - avatarStartedAt)
+      const headingStartedAt = performance.now()
       updateHeadingAndArea(avatarMotion, bikeParts, pickupState, keys, trackingRef.current, elapsed)
+      perfState.avgHeadingMs = smoothMetric(perfState.avgHeadingMs, performance.now() - headingStartedAt)
+      const worldStartedAt = performance.now()
       updateWorldScroll(world, avatarMotion)
       updateCameraFollow(camera, avatar, avatarMotion)
+      perfState.avgWorldMs = smoothMetric(perfState.avgWorldMs, performance.now() - worldStartedAt)
+      const pickupStartedAt = performance.now()
       updateBikeParts(bikeParts, avatarMotion, avatar, trackingRef.current, keys, pickupState, onPickupDebugRef.current, elapsed)
       updateBackpackGlow(avatar, elapsed)
+      perfState.avgPickupMs = smoothMetric(perfState.avgPickupMs, performance.now() - pickupStartedAt)
+      const mapDebugStartedAt = performance.now()
       publishMapData(avatarMotion, bikeParts.parts, onMapDataRef.current, elapsed)
-      publishWorldDebug(avatarMotion, onWorldDebugRef.current, elapsed)
+      publishWorldDebug(avatarMotion, onWorldDebugRef.current, elapsed, scene, renderer, perfState, trackingRef.current)
+      perfState.avgMapDebugMs = smoothMetric(perfState.avgMapDebugMs, performance.now() - mapDebugStartedAt)
+      const renderStartedAt = performance.now()
       renderer.render(scene, camera)
+      perfState.avgRenderMs = smoothMetric(perfState.avgRenderMs, performance.now() - renderStartedAt)
+      perfState.drawCalls = renderer.info.render.calls
       frameId = requestAnimationFrame(animate)
     }
 
@@ -273,26 +333,33 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
 
 function buildStreet(scene) {
   const road = new THREE.Mesh(
-    new THREE.BoxGeometry(ROAD_WIDTH, 0.08, STREET_LENGTH),
-    material(0x8f9690)
+    new THREE.BoxGeometry(VISUAL_ROAD_WIDTH, 0.08, STREET_LENGTH),
+    material(0xe8d8bf)
   )
   road.position.set(0, -0.04, STREET_CENTER_Z)
   road.receiveShadow = true
   addOutlined(scene, road, 0.012)
+  addPavingPattern(scene, VISUAL_ROAD_WIDTH * 0.94, STREET_LENGTH, 0, STREET_CENTER_Z, 0.018)
 
   for (const side of [-1, 1]) {
     const bikeLane = new THREE.Mesh(
-      new THREE.BoxGeometry(BIKE_LANE_WIDTH, 0.025, STREET_LENGTH),
-      material(0xa85f49)
+      new THREE.BoxGeometry(0.46, 0.025, STREET_LENGTH),
+      material(0xd9c5ad)
     )
+    const innerTrack = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, STREET_LENGTH), material(0xc8b08f))
+    const outerTrack = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.032, STREET_LENGTH), material(0xf5e5c9))
 
-    bikeLane.position.set(side * (ROAD_WIDTH / 2 - BIKE_LANE_WIDTH / 2 - 0.18), 0.025, STREET_CENTER_Z)
+    bikeLane.position.set(side * (VISUAL_ROAD_WIDTH / 2 - 0.42), 0.025, STREET_CENTER_Z)
+    innerTrack.position.set(side * (VISUAL_ROAD_WIDTH / 2 - 0.92), 0.034, STREET_CENTER_Z)
+    outerTrack.position.set(side * (VISUAL_ROAD_WIDTH / 2 - 0.12), 0.036, STREET_CENTER_Z)
     addOutlined(scene, bikeLane, 0.006)
+    addOutlined(scene, innerTrack, 0.003)
+    addOutlined(scene, outerTrack, 0.003)
   }
 
-  const laneMaterial = material(0xf6d56e)
+  const laneMaterial = material(0xf4ead8)
   for (let i = 0; i < 44; i += 1) {
-    const line = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.025, 1.25), laneMaterial)
+    const line = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.025, 0.72), laneMaterial)
 
     line.position.set(0, 0.025, 7.5 - i * 3.4)
     addOutlined(scene, line, 0.006)
@@ -303,6 +370,7 @@ function buildStreet(scene) {
     createBuildingRow(scene, side)
     createStreetProps(scene, side)
   }
+  addMainStreetTrees(scene)
 
   const farCrosswalk = createCrosswalk()
   farCrosswalk.position.z = -38
@@ -311,12 +379,16 @@ function buildStreet(scene) {
   const canal = createCanalHint()
   canal.position.set(-11.9, -0.02, -35)
   scene.add(canal)
+
+  const dome = createDistantDome()
+  dome.position.set(0, 0.05, -58)
+  scene.add(dome)
 }
 
 function addLeftStreetEntrance(scene) {
   const entrance = new THREE.Group()
-  const sideRoad = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.045, 8.4), material(0x8f9690))
-  const leftCurb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 8.2), material(0xd8d0c2))
+  const sideRoad = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.045, 8.4), material(0xe4d4bd))
+  const leftCurb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 8.2), material(0xd9cdbb))
   const rightCurb = leftCurb.clone()
   const sign = createStreetSign('Left Street')
   const planter = createPlanter()
@@ -335,9 +407,9 @@ function addLeftStreetEntrance(scene) {
   addTJunctionDetails(entrance)
   sign.position.set(-4.95, 0.34, -2.7)
   sign.rotation.y = -0.25
-  planter.position.set(-5.6, 0.14, 2.8)
-  lamp.position.set(-4.9, 0.05, 2.15)
-  bike.position.set(-5.8, 0.12, -2.1)
+  planter.position.set(-5.55, 0.14, 3.45)
+  lamp.position.set(-5.05, 0.05, 3.2)
+  bike.position.set(-6.75, 0.12, -3.25)
   bike.rotation.y = Math.PI * 0.5
   entrance.add(sign, planter, lamp, bike)
   entrance.position.z = LEFT_STREET_ENTRANCE_Z
@@ -345,32 +417,36 @@ function addLeftStreetEntrance(scene) {
 }
 
 function addTJunctionDetails(entrance) {
-  const apron = new THREE.Mesh(new THREE.BoxGeometry(6.3, 0.028, 6.2), material(0x8f9690))
-  const northCorner = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 1.2), material(0xf3eee4))
+  const apron = new THREE.Mesh(new THREE.BoxGeometry(6.3, 0.028, 6.2), material(0xe4d4bd))
+  const transition = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.03, 4.9), material(0xead9bf))
+  const northCorner = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.08, 1.05), material(0xf3eee4))
   const southCorner = northCorner.clone()
-  const bikeTurnA = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.032, 2.45), material(0xa85f49))
-  const bikeTurnB = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.032, 0.26), material(0xa85f49))
+  const bikeTurnA = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.032, 2.45), material(0xd9c5ad))
+  const bikeTurnB = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.032, 0.22), material(0xd9c5ad))
   const planterA = createPlanter()
   const planterB = createPlanter()
   const lampA = createLamp()
 
   apron.position.set(-4.85, 0.04, 0)
+  transition.position.set(-5.5, 0.062, 0)
+  transition.rotation.y = Math.PI * 0.5
   addOutlined(entrance, apron, 0.006)
-  northCorner.position.set(-5.35, 0.09, -3.15)
-  southCorner.position.set(-5.35, 0.09, 3.15)
+  addOutlined(entrance, transition, 0.004)
+  northCorner.position.set(-4.55, 0.09, -3.35)
+  southCorner.position.set(-4.55, 0.09, 3.35)
   addOutlined(entrance, northCorner, 0.006)
   addOutlined(entrance, southCorner, 0.006)
 
-  for (let i = -2; i <= 2; i += 1) {
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.032, 3.2), material(0xf7f5ed))
+  for (let i = -1; i <= 1; i += 1) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.032, 2.65), material(0xf7f5ed))
 
-    stripe.position.set(-2.15 + i * 0.58, 0.07, -3.05)
+    stripe.position.set(-2.28 + i * 0.7, 0.07, -3.05)
     stripe.rotation.y = Math.PI * 0.5
     addOutlined(entrance, stripe, 0.003)
   }
 
-  for (let i = -2; i <= 2; i += 1) {
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.032, 2.4), material(0xf7f5ed))
+  for (let i = -1; i <= 1; i += 1) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.032, 2.2), material(0xf7f5ed))
 
     stripe.position.set(-5.85, 0.07, i * 0.52)
     addOutlined(entrance, stripe, 0.003)
@@ -380,9 +456,9 @@ function addTJunctionDetails(entrance) {
   bikeTurnB.position.set(-5.05, 0.078, 2.1)
   addOutlined(entrance, bikeTurnA, 0.004)
   addOutlined(entrance, bikeTurnB, 0.004)
-  planterA.position.set(-4.85, 0.16, -3.8)
-  planterB.position.set(-4.85, 0.16, 3.8)
-  lampA.position.set(-4.35, 0.05, -3.75)
+  planterA.position.set(-4.35, 0.16, -3.85)
+  planterB.position.set(-4.35, 0.16, 3.85)
+  lampA.position.set(-3.95, 0.05, -3.55)
   entrance.add(planterA, planterB, lampA)
 }
 
@@ -391,12 +467,13 @@ function buildLeftStreet(scene) {
   const sideStreetCenterZ = STREET_CENTER_Z
   const road = new THREE.Mesh(
     new THREE.BoxGeometry(sideRoadWidth, 0.08, STREET_LENGTH),
-    material(0x8d938d)
+    material(0xe4d4bd)
   )
 
   road.position.set(0, -0.04, sideStreetCenterZ)
   road.receiveShadow = true
   addOutlined(scene, road, 0.012)
+  addPavingPattern(scene, sideRoadWidth * 0.9, STREET_LENGTH, 0, sideStreetCenterZ, 0.018)
 
   for (const side of [-1, 1]) {
     const sidewalk = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.14, STREET_LENGTH), material(0xf3eee4))
@@ -407,7 +484,11 @@ function buildLeftStreet(scene) {
     addOutlined(scene, sidewalk, 0.01)
     addOutlined(scene, curb, 0.008)
 
-    for (let i = 0; i < 26; i += 1) {
+    const leftStreetBuildingCount = PERFORMANCE_MODE ? 9 : 26
+    const leftStreetPropCount = PERFORMANCE_MODE ? 3 : 18
+    const leftStreetLampCount = PERFORMANCE_MODE ? 3 : 12
+
+    for (let i = 0; i < leftStreetBuildingCount; i += 1) {
       const buildingZ = 7.5 - i * 4.8
 
       if (buildingZ > -8) {
@@ -416,34 +497,31 @@ function buildLeftStreet(scene) {
 
       const building = createBuilding({
         depth: 1.2 + (i % 2) * 0.18,
-        height: 2.8 + (i % 4) * 0.32,
+        height: 3.8 + (i % 4) * 0.34,
         index: i + 2,
         side,
         width: 1.05 + (i % 3) * 0.14,
       })
 
-      building.position.set(side * (5.25 + (i % 2) * 0.16), (2.8 + (i % 4) * 0.32) / 2, buildingZ)
+      building.position.set(side * (5.1 + (i % 2) * 0.16), (3.8 + (i % 4) * 0.34) / 2, buildingZ)
       building.rotation.y = side * 0.025
       scene.add(building)
     }
 
-    for (let i = 0; i < 18; i += 1) {
+    for (let i = 0; i < leftStreetPropCount; i += 1) {
       const propZ = 5.8 - i * 5.8
 
       if (propZ > -7) {
         continue
       }
 
-      const bike = createParkedBike(i + 5)
       const planter = createPlanter()
 
-      bike.position.set(side * 3.35, 0.12, propZ)
-      bike.rotation.y = side * Math.PI * 0.5
       planter.position.set(side * 4.05, 0.14, propZ - 1.7)
-      scene.add(bike, planter)
+      scene.add(planter)
     }
 
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < leftStreetLampCount; i += 1) {
       const lampZ = 7.2 - i * 8.2
 
       if (lampZ > -7) {
@@ -468,149 +546,257 @@ function buildLeftStreet(scene) {
 
 function createSidewalk(scene, side) {
   const sidewalk = new THREE.Mesh(
-    new THREE.BoxGeometry(SIDEWALK_WIDTH, 0.14, STREET_LENGTH),
-    material(0xf3eee4)
+    new THREE.BoxGeometry(VISUAL_SIDEWALK_WIDTH, 0.14, STREET_LENGTH),
+    material(0xf0e5d2)
   )
-  sidewalk.position.set(side * SIDEWALK_X, 0.02, STREET_CENTER_Z)
+  sidewalk.position.set(side * VISUAL_SIDEWALK_X, 0.02, STREET_CENTER_Z)
   sidewalk.receiveShadow = true
   addOutlined(scene, sidewalk, 0.01)
 
   const curb = new THREE.Mesh(
     new THREE.BoxGeometry(0.18, 0.18, STREET_LENGTH),
-    material(0xd8d0c2)
+    material(0xd5c7b4)
   )
-  curb.position.set(side * (ROAD_WIDTH / 2 + 0.08), 0.08, STREET_CENTER_Z)
+  curb.position.set(side * VISUAL_CURB_X, 0.08, STREET_CENTER_Z)
   addOutlined(scene, curb, 0.008)
 
-  for (let i = 0; i < 32; i += 1) {
-    const seam = new THREE.Mesh(new THREE.BoxGeometry(SIDEWALK_WIDTH * 0.92, 0.012, 0.035), material(0xd8d0c2))
+  const sidewalkSeamCount = PERFORMANCE_MODE ? 12 : 32
+  const sidewalkStoneRows = PERFORMANCE_MODE ? 1 : 2
+  const sidewalkStoneCount = PERFORMANCE_MODE ? 8 : 24
 
-    seam.position.set(side * SIDEWALK_X, 0.105, 8 - i * 4.8)
+  for (let i = 0; i < sidewalkSeamCount; i += 1) {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(VISUAL_SIDEWALK_WIDTH * 0.92, 0.012, 0.035), material(0xd7cab8))
+
+    seam.position.set(side * VISUAL_SIDEWALK_X, 0.105, 8 - i * (PERFORMANCE_MODE ? 12.4 : 4.8))
     scene.add(seam)
   }
 
-  for (let row = 0; row < 3; row += 1) {
-    for (let i = 0; i < 24; i += 1) {
-      const stone = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.014, 0.035), material(0xded7cb))
+  for (let row = 0; row < sidewalkStoneRows; row += 1) {
+    for (let i = 0; i < sidewalkStoneCount; i += 1) {
+      const stone = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.014, 0.035), material(0xe7dcc9))
 
-      stone.position.set(side * (SIDEWALK_X - 0.86 + row * 0.52), 0.112, 6.2 - i * 6.4 - row * 0.8)
+      stone.position.set(side * (VISUAL_SIDEWALK_X - 0.42 + row * 0.52), 0.112, 6.2 - i * (PERFORMANCE_MODE ? 17 : 6.4) - row * 0.8)
       scene.add(stone)
     }
   }
 }
 
 function createBuildingRow(scene, side) {
-  for (let i = 0; i < 30; i += 1) {
-    const height = 3.1 + (i % 5) * 0.46
-    const width = 1.18 + (i % 4) * 0.24
-    const depth = 1.45 + (i % 3) * 0.35
-    const building = createBuilding({ depth, height, index: i, side, width })
+  let zCursor = 8.45
+  let i = 0
 
-    building.position.set(side * (BUILDING_X + (i % 2) * 0.34), height / 2, 7.5 - i * 4.45)
-    building.rotation.y = side * (0.04 + (i % 3) * 0.014)
+  const farLimit = PERFORMANCE_MODE ? PERFORMANCE_STREET_DETAIL_Z : -STREET_LENGTH + 12
+
+  while (zCursor > farLimit) {
+    const block = HOUSE_BLOCKS[i % HOUSE_BLOCKS.length]
+    const depth = block.length + ((i + side + 20) % 3) * 0.08
+    const width = block.width + ((i + 1) % 3) * 0.04
+    const height = 2.75 + block.floors * 0.58 + (i % 5 === 0 ? 0.28 : 0)
+    const shopKind = side < 0 && i % HOUSE_BLOCKS.length === 0
+      ? 'cafe'
+      : side > 0 && i % HOUSE_BLOCKS.length === 6
+        ? 'flowers'
+        : ''
+    const buildingZ = zCursor - depth / 2
+
+    if (isLeftStreetOpening(side, buildingZ, depth)) {
+      zCursor -= depth + 0.035
+      i += 1
+      continue
+    }
+
+    const building = createBuilding({ depth, height, index: i, shopKind, side, width })
+
+    building.position.set(side * (VISUAL_BUILDING_FACE_X + width / 2), height / 2, buildingZ)
+    building.rotation.y = side * (0.008 + (i % 3) * 0.004)
     scene.add(building)
+    zCursor -= depth + 0.035
+    i += 1
   }
 }
 
+function isLeftStreetOpening(side, buildingZ, depth) {
+  return side < 0 && Math.abs(buildingZ - LEFT_STREET_ENTRANCE_Z) < 4.6 + depth / 2
+}
+
 function createStreetProps(scene, side) {
-  for (let i = 0; i < 24; i += 1) {
-    const tree = createTree()
+  const lampCount = PERFORMANCE_MODE ? 5 : 18
+  const benchCount = PERFORMANCE_MODE ? 0 : 5
+  const planterCount = PERFORMANCE_MODE ? 3 : 12
+  const rackCount = PERFORMANCE_MODE ? 0 : 8
+  const cafeSetCount = PERFORMANCE_MODE ? 0 : 4
 
-    tree.position.set(side * (PROP_X + 0.55 + (i % 2) * 0.3), 0.12, 6.2 - i * 5.8)
-    scene.add(tree)
-  }
-
-  for (let i = 0; i < 22; i += 1) {
+  for (let i = 0; i < lampCount; i += 1) {
     const lamp = createLamp()
 
-    lamp.position.set(side * (PROP_X - 0.18), 0.05, 8.4 - i * 6.4)
+    lamp.position.set(side * (VISUAL_PROP_X - 0.08), 0.05, 7.2 - i * 6.8)
+    lamp.scale.setScalar(0.9)
     scene.add(lamp)
   }
 
-  for (let i = 0; i < 13; i += 1) {
+  for (let i = 0; i < benchCount; i += 1) {
     const bench = createBench()
 
-    bench.position.set(side * (PROP_X + 1.25), 0.2, 4.2 - i * 8.4)
+    bench.position.set(side * (VISUAL_PROP_X + 0.65), 0.2, -10.8 - i * 18.4)
     bench.rotation.y = side * Math.PI * 0.5
     scene.add(bench)
   }
 
-  for (let i = 0; i < 24; i += 1) {
+  for (let i = 0; i < planterCount; i += 1) {
     const planter = createPlanter()
 
-    planter.position.set(side * (PROP_X + 1 + (i % 2) * 0.24), 0.14, 7.6 - i * 4.45)
+    planter.position.set(side * (VISUAL_PROP_X + 0.55 + (i % 2) * 0.12), 0.14, 6.6 - i * 8.2)
     scene.add(planter)
   }
 
-  for (let i = 0; i < 20; i += 1) {
-    const bike = createParkedBike(i)
+  addLandmarkBikes(scene, side)
 
-    bike.position.set(side * (PROP_X + 0.3 + (i % 2) * 0.42), 0.12, 6.8 - i * 5.2)
-    bike.rotation.y = side * Math.PI * 0.5
-    scene.add(bike)
-  }
-
-  for (let i = 0; i < 11; i += 1) {
+  for (let i = 0; i < rackCount; i += 1) {
     const rack = createBikeRack()
 
-    rack.position.set(side * (PROP_X + 0.7), 0.06, 3.2 - i * 9.6)
+    rack.position.set(side * (VISUAL_PROP_X + 0.48), 0.06, 3.2 - i * 12.6)
     rack.rotation.y = side * Math.PI * 0.5
     scene.add(rack)
   }
 
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < cafeSetCount; i += 1) {
     const cafe = createCafeSet(i)
 
-    cafe.position.set(side * (PROP_X + 1.36), 0.08, 1.2 - i * 14.5)
+    cafe.position.set(side * (VISUAL_PROP_X + 0.7), 0.08, -16.2 - i * 20.5)
     cafe.rotation.y = side * Math.PI * 0.5
     scene.add(cafe)
   }
+
+  if (side < 0) {
+    const cafe = createCafeStreetMoment()
+
+    cafe.position.set(side * (VISUAL_PROP_X + 0.5), 0.05, 3.9)
+    cafe.rotation.y = side * Math.PI * 0.5
+    scene.add(cafe)
+  } else {
+    const flowers = createFlowerShopStreetMoment()
+
+    flowers.position.set(side * (VISUAL_PROP_X + 0.54), 0.05, -0.2)
+    flowers.rotation.y = side * Math.PI * 0.5
+    scene.add(flowers)
+  }
+
+  if (side > 0) {
+    const postbox = createPostbox()
+
+    postbox.position.set(side * (VISUAL_PROP_X + 0.34), 0.05, -4.9)
+    scene.add(postbox)
+  }
 }
 
-function createBuilding({ depth, height, index, side, width }) {
+function addMainStreetTrees(scene) {
+  const treePositions = [
+    { side: -1, z: 2.4, scale: 0.78 },
+    { side: 1, z: -1.8, scale: 0.78 },
+    { side: -1, z: -34, scale: 0.72 },
+  ]
+
+  for (const { side, z, scale } of treePositions) {
+    const tree = createTree()
+
+    tree.position.set(side * (VISUAL_PROP_X + 0.42), 0.12, z)
+    tree.scale.setScalar(scale)
+    scene.add(tree)
+  }
+}
+
+function addLandmarkBikes(scene, side) {
+  const bikePositions = side < 0
+    ? [
+        { index: 0, z: 3.2, xOffset: 0.44 },
+        { index: 8, z: -46, xOffset: 0.5 },
+      ]
+    : [
+        { index: 1, z: -1.2, xOffset: 0.42 },
+      ]
+
+  for (const bikePosition of bikePositions) {
+    const bike = createParkedBike(bikePosition.index)
+
+    bike.position.set(side * (VISUAL_PROP_X + bikePosition.xOffset), 0.12, bikePosition.z)
+    bike.rotation.y = side * Math.PI * 0.5
+    scene.add(bike)
+  }
+}
+
+function createBuilding({ depth, height, index, shopKind = '', side, width }) {
   const group = new THREE.Group()
-  const colors = [0xf0a35f, 0xf4d35e, 0x72c6b1, 0x9bd0df, 0xe9959d, 0xd86f54, 0xf3ead4, 0xb85d4f]
-  const brickColors = [0xb75f4c, 0xc9795d, 0x9f5748]
-  const bodyColor = index % 5 === 2 ? brickColors[index % brickColors.length] : colors[index % colors.length]
+  const isNearBuilding = !PERFORMANCE_MODE || index < 8 || Boolean(shopKind)
+  const colors = [0x8ba7ca, 0xeac77c, 0x86a889, 0xc86f58, 0xf1e5ce, 0xe0a982, 0xa7b6c8, 0xd7a2bb]
+  const brickColors = [0xb96958, 0xc98267, 0xa65f53]
+  const bodyColor = shopKind === 'cafe'
+    ? 0x8ba7ca
+    : shopKind === 'flowers'
+      ? 0xeac77c
+      : index % 5 === 2
+        ? brickColors[index % brickColors.length]
+        : colors[index % colors.length]
   const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material(bodyColor))
 
-  body.castShadow = true
+  body.castShadow = !PERFORMANCE_MODE || index < 8
   body.receiveShadow = true
   addOutlined(group, body, 0.015)
 
-  if (index % 5 === 2) {
+  if (isNearBuilding && index % 5 === 2) {
     addBrickLines(group, width, height, depth)
   }
+  if (isNearBuilding) {
+    addFacadeTexture(group, width, height, depth, bodyColor, index)
+  }
 
-  const roofColor = index % 3 === 0 ? 0x3f4a4b : index % 3 === 1 ? 0x5a3838 : 0x657170
-  const roof = createGableRoof(width * 1.16, depth * 1.12, 0.72, roofColor)
+  const roofColor = shopKind === 'cafe' ? 0x594238 : index % 3 === 0 ? 0x334047 : index % 3 === 1 ? 0x67423a : 0x596665
+  const roof = createGableRoof(width * 1.18, depth * 1.08, 0.72 + (index % 4) * 0.08, roofColor)
 
   roof.position.y = height / 2 + 0.02
-  roof.castShadow = true
+  roof.castShadow = !PERFORMANCE_MODE || index < 8
   group.add(roof)
 
-  const windowRows = Math.max(2, Math.floor(height / 0.72))
-  for (let row = 0; row < windowRows; row += 1) {
+  const windowRows = PERFORMANCE_MODE
+    ? Math.max(2, Math.floor(height / 1.25))
+    : Math.max(4, Math.floor(height / 0.72))
+  const windowStep = PERFORMANCE_MODE ? 2 : 1
+  for (let row = 0; row < windowRows; row += windowStep) {
     for (let col = -1; col <= 1; col += 2) {
-      const windowPane = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.48, 0.035), material(0xf4fbfb))
+      const recess = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.56, 0.032), material(row % 3 === 0 ? 0xd8c8b8 : 0xe7d7c4))
+      const windowPane = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.45, 0.035), material(row % 4 === 0 ? 0x4b5658 : 0xf8f3e8))
+      const mullionV = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.45, 0.05), material(0xffffff))
+      const mullionH = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.025, 0.052), material(0xffffff))
 
-      windowPane.position.set((col * width) / 4, -height / 2 + 0.7 + row * 0.62, depth / 2 + 0.018)
-      addOutlined(group, windowPane, 0.006)
+      recess.position.set((col * width) / 4, -height / 2 + 0.76 + row * 0.62, depth / 2 + 0.016)
+      windowPane.position.set(recess.position.x, recess.position.y, depth / 2 + 0.04)
+      mullionV?.position.copy(windowPane.position).setZ(depth / 2 + 0.064)
+      mullionH?.position.copy(windowPane.position).setZ(depth / 2 + 0.066)
+      addOutlined(group, recess, 0.004)
+      addOutlined(group, windowPane, 0.004)
+      if (!PERFORMANCE_MODE && row % 4 !== 0) {
+        group.add(mullionV, mullionH)
+      }
 
       const sill = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.035, 0.055), material(0xf8f0e2))
 
       sill.position.set(windowPane.position.x, windowPane.position.y - 0.29, depth / 2 + 0.04)
       addOutlined(group, sill, 0.004)
+      if (!PERFORMANCE_MODE && (row + index) % 4 === 1) {
+        const flowerBox = createFlowerBox()
+
+        flowerBox.position.set(windowPane.position.x, windowPane.position.y - 0.34, depth / 2 + 0.075)
+        group.add(flowerBox)
+      }
     }
   }
 
-  const shop = new THREE.Mesh(new THREE.BoxGeometry(width * 0.78, 0.52, 0.055), material(0xfff7eb))
+  const shop = new THREE.Mesh(new THREE.BoxGeometry(width * 0.78, 0.52, 0.055), material(0xf9edd9))
   const awning = new THREE.Mesh(
     new THREE.BoxGeometry(width * 0.88, 0.09, 0.36),
-    material(index % 2 === 0 ? 0xe8796d : 0xf4d269)
+    material(index % 2 === 0 ? 0xc96f63 : 0xe2c66f)
   )
-  const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.22, 0.48, 0.075), material(0x78aeb0))
-  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.18, 0.07), material(index % 3 === 0 ? 0x76d5cb : 0xf7c560))
+  const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.22, 0.48, 0.075), material(0x68909a))
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.18, 0.07), material(index % 3 === 0 ? 0x7aa39d : 0xe3bd6f))
   const shopMark = index % 2 === 0
     ? new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.017, 8, 18), material(0x8d5a3d))
     : new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.12, 12), material(0xf1b86b))
@@ -621,13 +807,27 @@ function createBuilding({ depth, height, index, side, width }) {
   sign.position.set(-side * width * 0.16, -height / 2 + 1.02, depth / 2 + 0.09)
   shopMark.position.set(sign.position.x, sign.position.y, depth / 2 + 0.135)
   shopMark.rotation.x = Math.PI * 0.5
-  addOutlined(group, shop, 0.006)
-  addOutlined(group, awning, 0.008)
-  addOutlined(group, door, 0.006)
-  addOutlined(group, sign, 0.006)
-  addOutlined(group, shopMark, 0.004)
+  if (!PERFORMANCE_MODE || shopKind || index < 4) {
+    addOutlined(group, shop, 0.006)
+    addOutlined(group, awning, 0.008)
+    addOutlined(group, door, 0.006)
+    addOutlined(group, sign, 0.006)
+    addOutlined(group, shopMark, 0.004)
+  } else {
+    group.add(shop, awning, door, sign)
+  }
 
-  for (let i = -1; i <= 1; i += 2) {
+  if (shopKind) {
+    const frontage = shopKind === 'cafe'
+      ? createCafeBuildingFrontage(width, height, depth)
+      : createFlowerBuildingFrontage(width, height, depth)
+
+    group.add(frontage)
+  }
+
+  group.add(createStreetFacingFacade({ depth, height, index, shopKind, side, width }))
+
+  if (!PERFORMANCE_MODE || shopKind) for (let i = -1; i <= 1; i += 2) {
     const box = createFlowerBox()
 
     box.position.set((i * width) / 4, -height / 2 + 1.35, depth / 2 + 0.07)
@@ -640,12 +840,12 @@ function createBuilding({ depth, height, index, side, width }) {
 function createPoseAvatar() {
   const group = new THREE.Group()
   const skin = material(0xffc59e)
-  const coat = material(0x2f80ed)
-  const accent = material(0xf6d56e)
-  const backpackMaterial = material(0xf0a35f)
+  const coat = material(0x6f8faa)
+  const accent = material(0xd8bd6d)
+  const backpackMaterial = material(0xd79a6f)
   const dark = material(0x26302f)
-  const screenLeftHand = material(0x76d5cb)
-  const screenRightHand = material(0xf09ab1)
+  const screenLeftHand = material(0x8aaea8)
+  const screenRightHand = material(0xd89aa7)
 
   group.userData.parts = {
     head: new THREE.Mesh(new THREE.SphereGeometry(0.18, 18, 12), skin),
@@ -669,7 +869,7 @@ function createPoseAvatar() {
     addAvatarOutlined(group, part, 0.012)
   }
 
-  group.userData.parts.backpack.userData.baseColor = new THREE.Color(0xf0a35f)
+  group.userData.parts.backpack.userData.baseColor = new THREE.Color(0xd79a6f)
   group.userData.parts.backpack.userData.glowColor = new THREE.Color(0xffedb7)
   group.scale.setScalar(1.15)
 
@@ -717,7 +917,7 @@ function createBikePart(kind) {
 function createWheelPart() {
   const group = new THREE.Group()
   const tire = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 10, 28), material(0x26302f))
-  const hub = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), material(0xf6d56e))
+  const hub = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), material(0xd8bd6d))
 
   tire.rotation.y = Math.PI * 0.5
   addOutlined(group, tire, 0.006)
@@ -737,7 +937,7 @@ function createHandlebarPart() {
   const group = new THREE.Group()
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.055, 0.055), material(0x53605e))
   const stem = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.055), material(0x53605e))
-  const leftGrip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.07, 0.07), material(0xf0a35f))
+  const leftGrip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.07, 0.07), material(0xd79a6f))
   const rightGrip = leftGrip.clone()
 
   stem.position.y = -0.22
@@ -754,7 +954,7 @@ function createHandlebarPart() {
 
 function createFramePart() {
   const group = new THREE.Group()
-  const frameMaterial = material(0x2f80ed)
+  const frameMaterial = material(0x6f8faa)
   const points = [
     [new THREE.Vector3(-0.42, -0.22, 0), new THREE.Vector3(-0.05, 0.35, 0)],
     [new THREE.Vector3(-0.05, 0.35, 0), new THREE.Vector3(0.45, -0.22, 0)],
@@ -839,6 +1039,127 @@ function createStreetSignText(label) {
   sprite.scale.set(0.92, 0.34, 1)
 
   return sprite
+}
+
+function createPaintedText(label, color, width, height) {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+
+  canvas.width = 256
+  canvas.height = 96
+  if (!context) {
+    return new THREE.Sprite(new THREE.SpriteMaterial({ color }))
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = `#${new THREE.Color(color).getHexString()}`
+  context.font = '800 34px Georgia, Times New Roman, serif'
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+  context.fillText(label, 128, 48)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+  }))
+
+  sprite.scale.set(width, height, 1)
+
+  return sprite
+}
+
+function createStreetFacingFacade({ depth, height, index, shopKind, side, width }) {
+  const group = new THREE.Group()
+  const isNearBuilding = !PERFORMANCE_MODE || index < 8 || Boolean(shopKind)
+  const faceX = -side * (width / 2 + 0.028)
+  const signX = -side * (width / 2 + 0.064)
+  const zColumns = PERFORMANCE_MODE ? 2 : Math.max(2, Math.min(4, Math.round(depth / 0.72)))
+  const rows = PERFORMANCE_MODE ? Math.max(2, Math.floor(height / 1.25)) : Math.max(4, Math.floor(height / 0.7))
+  const shopBand = new THREE.Mesh(
+    new THREE.BoxGeometry(0.055, 0.68, depth * 0.86),
+    material(shopKind === 'cafe' ? 0x4a342b : shopKind === 'flowers' ? 0x42633d : 0xf1dfc5),
+  )
+  const shopSign = shopKind
+    ? new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.23, depth * 0.72), material(shopKind === 'cafe' ? 0x5a3f31 : 0x315d38))
+    : null
+  const shopText = shopKind
+    ? createPaintedText(shopKind === 'cafe' ? 'COFFEE' : 'BLOMSTER', 0xfff1d6, depth * 0.54, 0.18)
+    : null
+
+  shopBand.position.set(faceX, -height / 2 + 0.4, 0)
+  addOutlined(group, shopBand, 0.004)
+
+  if (shopSign && shopText) {
+    shopSign.position.set(signX, -height / 2 + 0.93, 0)
+    shopText.position.set(signX - side * 0.035, -height / 2 + 0.93, 0)
+    shopText.rotation.y = side * Math.PI * 0.5
+    addOutlined(group, shopSign, 0.004)
+    group.add(shopText)
+  }
+
+  if (shopKind) {
+    const awning = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.12, depth * 0.78),
+      material(shopKind === 'cafe' ? 0xe7c879 : 0xaebf82),
+    )
+
+    awning.position.set(faceX - side * 0.11, -height / 2 + 0.78, 0)
+    addOutlined(group, awning, 0.004)
+  }
+
+  for (let row = 0; row < rows; row += 1) {
+    const y = -height / 2 + 1.35 + row * 0.58
+
+    if (y > height / 2 - 0.18) {
+      continue
+    }
+
+    for (let col = 0; col < zColumns; col += 1) {
+      const z = -depth * 0.35 + col * ((depth * 0.7) / Math.max(1, zColumns - 1))
+      const darkInterior = (row + col + index) % 5 === 0
+      const recess = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.48, 0.27), material(0xd8c8b8))
+      const pane = new THREE.Mesh(
+        new THREE.BoxGeometry(0.045, 0.38, 0.19),
+        material(darkInterior ? 0x454a48 : 0xf8f1e5),
+      )
+      const mullionV = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.38, 0.018), material(0xffffff))
+      const mullionH = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.018, 0.19), material(0xffffff))
+
+      recess.position.set(faceX, y, z)
+      pane.position.set(faceX - side * 0.022, y, z)
+      mullionV?.position.set(faceX - side * 0.05, y, z)
+      mullionH?.position.set(faceX - side * 0.052, y, z)
+      addOutlined(group, recess, 0.003)
+      addOutlined(group, pane, 0.003)
+      if (!PERFORMANCE_MODE && !darkInterior) {
+        group.add(mullionV, mullionH)
+      }
+
+      if (!PERFORMANCE_MODE && (row + col + index) % 6 === 2) {
+        const box = createFlowerBox()
+
+        box.position.set(faceX - side * 0.06, y - 0.29, z)
+        box.rotation.y = side * Math.PI * 0.5
+        group.add(box)
+      }
+    }
+  }
+
+  if ((isNearBuilding && index % 3 === 0) || shopKind) {
+    const dormerCount = PERFORMANCE_MODE ? 1 : Math.min(2, zColumns)
+
+    for (let col = 0; col < dormerCount; col += 1) {
+      const dormer = createDormerWindow()
+      const z = -depth * 0.24 + col * depth * 0.38
+
+      dormer.position.set(faceX - side * 0.12, height / 2 + 0.38, z)
+      dormer.rotation.y = side * Math.PI * 0.5
+      group.add(dormer)
+    }
+  }
+
+  return group
 }
 
 function createTubeBetween(start, end, radius, tubeMaterial) {
@@ -1283,12 +1604,17 @@ function isNearLeftStreetJunction(motionState) {
   return Math.abs(motionState.playerWorldZ - LEFT_STREET_ENTRANCE_Z) < 5 && motionState.playerWorldX > -5.8
 }
 
-function publishWorldDebug(motionState, onWorldDebug, elapsed) {
+function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, perfState, tracking) {
   if (!onWorldDebug || elapsed - motionState.lastDebugAt < 0.12) {
     return
   }
 
   motionState.lastDebugAt = elapsed
+  const currentSceneStats = countSceneObjects(scene)
+
+  perfState.meshCount = currentSceneStats.meshCount
+  perfState.totalObjects = currentSceneStats.totalObjects
+  perfState.visibleObjects = currentSceneStats.visibleObjects
   onWorldDebug({
     avatarBaseYaw: AVATAR_BASE_YAW,
     currentAreaId: motionState.currentAreaId,
@@ -1329,7 +1655,57 @@ function publishWorldDebug(motionState, onWorldDebug, elapsed) {
     scrolling: motionState.scrolling,
     smoothedSpeed: motionState.smoothedSpeed,
     worldZ: motionState.worldTravel,
+    perf: {
+      avgAmbientMs: perfState.avgAmbientMs,
+      avgAvatarMs: perfState.avgAvatarMs,
+      avgFrameMs: perfState.avgFrameMs,
+      avgHeadingMs: perfState.avgHeadingMs,
+      avgMapDebugMs: perfState.avgMapDebugMs,
+      avgPickupMs: perfState.avgPickupMs,
+      avgRenderMs: perfState.avgRenderMs,
+      avgWorldMs: perfState.avgWorldMs,
+      drawCalls: perfState.drawCalls || renderer.info.render.calls,
+      fps: perfState.fps,
+      mediaPipeActive: Boolean(tracking?.performance?.mediaPipeActive),
+      mediaPipeFrameMs: tracking?.performance?.avgFrameMs ?? 0,
+      mediaPipeHandMs: tracking?.performance?.avgHandMs ?? 0,
+      mediaPipePoseMs: tracking?.performance?.avgPoseMs ?? 0,
+      mediaPipePostMs: tracking?.performance?.avgPostMs ?? 0,
+      meshCount: perfState.meshCount,
+      totalObjects: perfState.totalObjects,
+      visibleObjects: perfState.visibleObjects,
+    },
   })
+}
+
+function smoothMetric(current, next, smoothing = 0.12) {
+  if (!Number.isFinite(current) || current === 0) {
+    return next
+  }
+
+  return current + (next - current) * smoothing
+}
+
+function countSceneObjects(scene) {
+  const stats = {
+    meshCount: 0,
+    totalObjects: 0,
+    visibleObjects: 0,
+  }
+
+  scene.traverse((child) => {
+    stats.totalObjects += 1
+
+    if (child.visible) {
+      stats.visibleObjects += 1
+    }
+
+    if (child.isMesh) {
+      stats.meshCount += 1
+    }
+  })
+
+  return stats
 }
 
 function publishMapData(motionState, parts, onMapData, elapsed) {
@@ -2113,17 +2489,63 @@ function createGableRoof(width, depth, height, color) {
   const roof = new THREE.Mesh(geometry, material(color))
 
   addOutlined(group, roof, 0.014)
+  if (!PERFORMANCE_MODE) {
+    addRoofStrokes(group, width, depth, height, color)
+  }
 
-  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, depth * 1.08), material(0x293332))
+  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, depth * 1.08), material(0x38403f))
 
   ridge.position.y = height + 0.02
   addOutlined(group, ridge, 0.004)
 
+  const chimneyPositions = PERFORMANCE_MODE ? [1] : [-1, 1]
+
+  for (const i of chimneyPositions) {
+    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.42, 0.18), material(0xe9dfcf))
+
+    chimney.position.set(i * width * 0.26, height + 0.14, -depth * 0.18)
+    addOutlined(group, chimney, 0.005)
+  }
+
   return group
 }
 
+function createDormerWindow() {
+  const group = new THREE.Group()
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.36, 0.28), material(0x3f4647))
+  const pane = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.23, 0.035), material(0xf8f1e5))
+  const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.23, 0.04), material(0xffffff))
+  const roof = createGableRoof(0.34, 0.36, 0.18, 0x30383d)
+
+  body.position.y = 0.12
+  pane.position.set(0, 0.12, 0.16)
+  mullion.position.set(0, 0.12, 0.18)
+  roof.position.y = 0.3
+  addOutlined(group, body, 0.004)
+  addOutlined(group, pane, 0.003)
+  group.add(mullion, roof)
+
+  return group
+}
+
+function addRoofStrokes(group, width, depth, height, color) {
+  const strokeMaterial = material(tintColor(color, 0xffffff, 0.18))
+
+  for (let i = 0; i < 6; i += 1) {
+    const leftStroke = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.018, depth * 0.92), strokeMaterial)
+    const rightStroke = leftStroke.clone()
+    const x = -width * 0.36 + i * width * 0.14
+
+    leftStroke.position.set(x, height * 0.45 + Math.abs(x) * 0.18, 0)
+    leftStroke.rotation.z = -0.58
+    rightStroke.position.set(-x, height * 0.45 + Math.abs(x) * 0.18, 0)
+    rightStroke.rotation.z = 0.58
+    group.add(leftStroke, rightStroke)
+  }
+}
+
 function addBrickLines(group, width, height, depth) {
-  const brickMaterial = material(0x8b4a3f)
+  const brickMaterial = material(0x8d5a4d)
 
   for (let row = 0; row < Math.floor(height / 0.34); row += 1) {
     const line = new THREE.Mesh(new THREE.BoxGeometry(width * 0.86, 0.018, 0.025), brickMaterial)
@@ -2140,21 +2562,75 @@ function addBrickLines(group, width, height, depth) {
   }
 }
 
+function addFacadeTexture(group, width, height, depth, bodyColor, index) {
+  const light = material(tintColor(bodyColor, 0xffffff, 0.24))
+  const shadow = material(tintColor(bodyColor, 0x6f5d52, 0.16))
+
+  for (let i = 0; i < 12; i += 1) {
+    const stroke = new THREE.Mesh(
+      new THREE.BoxGeometry(width * (0.16 + (i % 4) * 0.06), 0.018, 0.022),
+      i % 3 === 0 ? shadow : light,
+    )
+    const x = -width * 0.34 + ((i * 37 + index * 11) % 68) / 100 * width
+    const y = -height / 2 + 0.55 + ((i * 53 + index * 17) % 78) / 100 * (height - 0.9)
+
+    stroke.position.set(x, y, depth / 2 + 0.036)
+    stroke.rotation.z = ((i % 5) - 2) * 0.018
+    group.add(stroke)
+  }
+}
+
+function addPavingPattern(scene, width, length, x, z, y) {
+  const stoneA = material(0xf4e8d6)
+  const stoneB = material(0xd8c9b7)
+  const seamMaterial = material(0xd5c2aa)
+  const rows = PERFORMANCE_MODE ? 4 : 9
+  const seamCount = PERFORMANCE_MODE ? 14 : 46
+  const stoneCount = PERFORMANCE_MODE ? 8 : 34
+
+  for (let row = 1; row < rows; row += 1) {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.014, length * 0.96), seamMaterial)
+
+    seam.position.set(x - width / 2 + row * (width / rows), y + 0.002, z)
+    scene.add(seam)
+  }
+
+  for (let i = 0; i < seamCount; i += 1) {
+    const cross = new THREE.Mesh(new THREE.BoxGeometry(width * 0.9, 0.013, 0.028), seamMaterial)
+
+    cross.position.set(x, y + 0.003, z + length / 2 - 1.6 - i * (PERFORMANCE_MODE ? 8.6 : 2.55))
+    scene.add(cross)
+  }
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let i = 0; i < stoneCount; i += 1) {
+      const stone = new THREE.Mesh(
+        new THREE.BoxGeometry(0.58 + (i % 3) * 0.08, 0.012, 0.045),
+        (i + row) % 4 === 0 ? stoneB : stoneA,
+      )
+
+      stone.position.set(
+        x - width / 2 + 0.42 + row * (width / rows),
+        y,
+        z + length / 2 - 2.4 - i * (PERFORMANCE_MODE ? 16 : 4.3) - (row % 2) * 1.15,
+      )
+      scene.add(stone)
+    }
+  }
+}
+
 function createTree() {
   const group = new THREE.Group()
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 1.25, 8), material(0x9f7553))
-  const crownA = new THREE.Mesh(new THREE.SphereGeometry(0.46, 14, 10), material(0x8bcf9a))
-  const crownB = new THREE.Mesh(new THREE.SphereGeometry(0.36, 14, 10), material(0xa7d98b))
-  const crownC = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 10), material(0x74bf92))
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 1.25, 8), material(0x8f7058))
+  const crownA = new THREE.Mesh(new THREE.SphereGeometry(0.48, 10, 8), material(0x8aa47a))
+  const crownB = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), material(0xa2b986))
 
   trunk.position.y = 0.62
   crownA.position.set(0, 1.38, 0)
-  crownB.position.set(-0.26, 1.2, 0.04)
-  crownC.position.set(0.28, 1.18, -0.02)
+  crownB.position.set(0.22, 1.2, 0.02)
   addOutlined(group, trunk, 0.009)
   addOutlined(group, crownA, 0.014)
   addOutlined(group, crownB, 0.014)
-  addOutlined(group, crownC, 0.014)
   group.userData.isTree = true
 
   return group
@@ -2162,10 +2638,10 @@ function createTree() {
 
 function createLamp() {
   const group = new THREE.Group()
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 2.1, 8), material(0x43504e))
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.045, 0.045), material(0x43504e))
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.16, 10), material(0x43504e))
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), material(0xffedb7))
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 2.1, 8), material(0x3f4a49))
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.045, 0.045), material(0x3f4a49))
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.16, 10), material(0x4f8f83))
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), material(0xffedbd))
 
   pole.position.y = 1.05
   arm.position.set(0.23, 2.05, 0)
@@ -2182,8 +2658,8 @@ function createLamp() {
 
 function createBench() {
   const group = new THREE.Group()
-  const wood = material(0xc8835a)
-  const metal = material(0x53605e)
+  const wood = material(0xb98062)
+  const metal = material(0x58625f)
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.32), wood)
   const back = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.08), wood)
   const legA = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.36, 0.08), metal)
@@ -2203,14 +2679,15 @@ function createBench() {
 
 function createPlanter() {
   const group = new THREE.Group()
-  const pot = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.26, 0.36), material(0xd38d6b))
+  const pot = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.26, 0.36), material(0xc58d70))
+  const flowerCount = PERFORMANCE_MODE ? 2 : 5
 
   pot.position.y = 0.13
   addOutlined(group, pot, 0.006)
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < flowerCount; i += 1) {
     const flower = new THREE.Mesh(
       new THREE.SphereGeometry(0.055, 8, 6),
-      material(i % 2 === 0 ? 0xf09ab1 : 0xf5d45f)
+      material(i % 2 === 0 ? 0xd996a5 : 0xe4ca73)
     )
 
     flower.position.set(-0.18 + i * 0.09, 0.31 + (i % 2) * 0.03, 0.02)
@@ -2223,7 +2700,7 @@ function createPlanter() {
 function createParkedBike(index) {
   const group = new THREE.Group()
   const tire = material(0x26302f)
-  const frameColor = [0xd7655a, 0x5ca9ad, 0xf0c85a, 0x567a89][index % 4]
+  const frameColor = [0xc65f52, 0x638f9c, 0xd7b962, 0x607d87][index % 4]
   const frame = material(frameColor)
   const metal = material(0x53605e)
   const wheelA = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.018, 8, 22), tire)
@@ -2272,21 +2749,26 @@ function createCafeSet(index) {
   const table = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.045, 14), material(0xf8f0e2))
   const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.32, 8), material(0x53605e))
   const chairA = createCafeChair()
-  const chairB = createCafeChair()
+  const chairB = PERFORMANCE_MODE ? null : createCafeChair()
   const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.08, 8), material(0xffedb7))
 
   table.position.y = 0.45
   stem.position.y = 0.25
   chairA.position.set(-0.35, 0.12, 0)
-  chairB.position.set(0.35, 0.12, 0)
-  chairB.rotation.y = Math.PI
+  if (chairB) {
+    chairB.position.set(0.35, 0.12, 0)
+    chairB.rotation.y = Math.PI
+  }
   candle.position.set(0, 0.52, 0)
   addOutlined(group, table, 0.006)
   addOutlined(group, stem, 0.004)
   addOutlined(group, candle, 0.003)
-  group.add(chairA, chairB)
+  group.add(chairA)
+  if (chairB) {
+    group.add(chairB)
+  }
 
-  if (index % 2 === 0) {
+  if (!PERFORMANCE_MODE && index % 2 === 0) {
     const umbrella = createCafeUmbrella()
 
     umbrella.position.set(0, 0.46, 0)
@@ -2296,9 +2778,161 @@ function createCafeSet(index) {
   return group
 }
 
+function createCafeBuildingFrontage(width, height, depth) {
+  const group = new THREE.Group()
+  const shopfront = new THREE.Mesh(new THREE.BoxGeometry(width * 0.92, 0.72, 0.075), material(0x3f3834))
+  const warmWindow = new THREE.Mesh(new THREE.BoxGeometry(width * 0.34, 0.42, 0.09), material(0xf2d3a1))
+  const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.24, 0.58, 0.1), material(0x4b5658))
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(width * 0.7, 0.22, 0.09), material(0x594238))
+  const text = createPaintedText('KAFFE', 0xf8ead4, width * 0.62, 0.2)
+
+  shopfront.position.set(0, -height / 2 + 0.42, depth / 2 + 0.085)
+  warmWindow.position.set(-width * 0.18, -height / 2 + 0.42, depth / 2 + 0.14)
+  door.position.set(width * 0.25, -height / 2 + 0.35, depth / 2 + 0.15)
+  sign.position.set(0, -height / 2 + 0.96, depth / 2 + 0.14)
+  text.position.set(0, -height / 2 + 0.96, depth / 2 + 0.2)
+  addOutlined(group, shopfront, 0.005)
+  addOutlined(group, warmWindow, 0.004)
+  addOutlined(group, door, 0.004)
+  addOutlined(group, sign, 0.004)
+  group.add(text)
+
+  return group
+}
+
+function createFlowerBuildingFrontage(width, height, depth) {
+  const group = new THREE.Group()
+  const shopfront = new THREE.Mesh(new THREE.BoxGeometry(width * 0.92, 0.66, 0.075), material(0xf6e8d2))
+  const awning = new THREE.Mesh(new THREE.BoxGeometry(width * 0.96, 0.13, 0.34), material(0xc98c9e))
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(width * 0.78, 0.22, 0.09), material(0x7b8f74))
+  const text = createPaintedText('BLOMSTER', 0xfff4df, width * 0.74, 0.18)
+
+  shopfront.position.set(0, -height / 2 + 0.4, depth / 2 + 0.085)
+  awning.position.set(0, -height / 2 + 0.78, depth / 2 + 0.17)
+  sign.position.set(0, -height / 2 + 1.02, depth / 2 + 0.14)
+  text.position.set(0, -height / 2 + 1.02, depth / 2 + 0.2)
+  addOutlined(group, shopfront, 0.005)
+  addOutlined(group, awning, 0.006)
+  addOutlined(group, sign, 0.004)
+  group.add(text)
+
+  return group
+}
+
+function createCafeStreetMoment() {
+  const group = new THREE.Group()
+  const chalkboard = createChalkboard('kaffe')
+  const umbrella = createCafeUmbrella()
+  const planterA = createPlanter()
+  const planterB = createPlanter()
+
+  for (let i = 0; i < 3; i += 1) {
+    const table = createCafeSet(i + 2)
+
+    table.position.set(-0.45 + i * 0.45, 0, -0.35 - i * 0.32)
+    table.scale.setScalar(0.86)
+    group.add(table)
+  }
+
+  chalkboard.position.set(0.78, 0.02, -1.15)
+  chalkboard.rotation.y = -0.28
+  umbrella.position.set(-0.18, 0.22, -0.66)
+  umbrella.scale.set(1.25, 1.15, 1.25)
+  planterA.position.set(-0.95, 0.08, 0.22)
+  planterB.position.set(0.95, 0.08, 0.12)
+  group.add(chalkboard, umbrella, planterA, planterB)
+
+  return group
+}
+
+function createFlowerShopStreetMoment() {
+  const group = new THREE.Group()
+  const display = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.13, 0.42), material(0xa8755d))
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.5, 0.08), material(0xb98062))
+  const sign = createChalkboard('flowers')
+
+  display.position.set(0, 0.25, -0.28)
+  back.position.set(0, 0.48, -0.49)
+  back.rotation.x = -0.12
+  addOutlined(group, display, 0.005)
+  addOutlined(group, back, 0.005)
+
+  for (let i = 0; i < 7; i += 1) {
+    const bucket = createFlowerBucket(i)
+
+    bucket.position.set(-0.45 + i * 0.15, 0.09, -0.06 - (i % 2) * 0.22)
+    group.add(bucket)
+  }
+
+  sign.position.set(0.72, 0.02, -0.78)
+  sign.rotation.y = -0.26
+  group.add(sign)
+
+  return group
+}
+
+function createFlowerBucket(index) {
+  const group = new THREE.Group()
+  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.065, 0.22, 10), material(0x7f8a86))
+  const colors = [0xd996a5, 0xe4ca73, 0xf8f0e2, 0xb6a5c9]
+  const bloomCount = PERFORMANCE_MODE ? 2 : 5
+
+  bucket.position.y = 0.12
+  addOutlined(group, bucket, 0.004)
+  for (let i = 0; i < bloomCount; i += 1) {
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 5), material(0x789675))
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), material(colors[(index + i) % colors.length]))
+
+    stem.position.set(-0.05 + i * 0.025, 0.27, -0.02 + (i % 2) * 0.035)
+    stem.rotation.z = (-2 + i) * 0.12
+    bloom.position.set(stem.position.x, 0.41 + (i % 2) * 0.03, stem.position.z)
+    addOutlined(group, stem, 0.002)
+    addOutlined(group, bloom, 0.002)
+  }
+
+  return group
+}
+
+function createChalkboard(kind) {
+  const group = new THREE.Group()
+  const board = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.54, 0.045), material(0x4c4f49))
+  const legA = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.48, 0.035), material(0x8b6753))
+  const legB = legA.clone()
+  const text = createPaintedText(kind === 'flowers' ? 'fresh' : 'dagens', 0xf8ead4, 0.38, 0.18)
+
+  board.position.y = 0.46
+  legA.position.set(-0.16, 0.2, -0.02)
+  legA.rotation.z = -0.12
+  legB.position.set(0.16, 0.2, -0.02)
+  legB.rotation.z = 0.12
+  text.position.set(0, 0.5, 0.032)
+  addOutlined(group, board, 0.004)
+  addOutlined(group, legA, 0.003)
+  addOutlined(group, legB, 0.003)
+  group.add(text)
+
+  return group
+}
+
+function createPostbox() {
+  const group = new THREE.Group()
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.72, 0.28), material(0xb94f47))
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.035, 0.035), material(0xf3dbc0))
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 0.32), material(0xa6433f))
+
+  body.position.y = 0.4
+  slot.position.set(0, 0.58, 0.16)
+  cap.position.y = 0.78
+  addOutlined(group, body, 0.006)
+  addOutlined(group, slot, 0.003)
+  addOutlined(group, cap, 0.004)
+
+  return group
+}
+
 function createCafeChair() {
   const group = new THREE.Group()
-  const wood = material(0xc8835a)
+  const wood = material(0xb98062)
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.045, 0.18), wood)
   const back = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.18, 0.045), wood)
 
@@ -2313,7 +2947,7 @@ function createCafeChair() {
 function createCafeUmbrella() {
   const group = new THREE.Group()
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.78, 8), material(0x53605e))
-  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.22, 16), material(0xe8796d))
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.22, 16), material(0xd28a7c))
 
   pole.position.y = 0.38
   shade.position.y = 0.8
@@ -2325,7 +2959,7 @@ function createCafeUmbrella() {
 
 function createCanalHint() {
   const group = new THREE.Group()
-  const water = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.035, 118), material(0x85c9d7))
+  const water = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.035, 118), material(0x91bdc9))
   const edge = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 118), material(0xd6cbb9))
 
   water.position.set(0, 0, 0)
@@ -2352,11 +2986,12 @@ function createCanalHint() {
 
 function createFlowerBox() {
   const group = new THREE.Group()
-  const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.11, 0.12), material(0xb77752))
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.11, 0.12), material(0xa8755d))
+  const flowerCount = PERFORMANCE_MODE ? 2 : 4
 
   addOutlined(group, box, 0.005)
-  for (let i = 0; i < 4; i += 1) {
-    const flower = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), material(i % 2 === 0 ? 0xf09ab1 : 0xf6d56e))
+  for (let i = 0; i < flowerCount; i += 1) {
+    const flower = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), material(i % 2 === 0 ? 0xd996a5 : 0xe4ca73))
 
     flower.position.set(-0.15 + i * 0.1, 0.08, 0.02)
     addOutlined(group, flower, 0.003)
@@ -2378,15 +3013,44 @@ function createCrosswalk() {
   return group
 }
 
+function createDistantDome() {
+  const group = new THREE.Group()
+  const base = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.15, 0.5), material(0xeadfcf))
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(1.05, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.52), material(0x609f9b))
+  const ribs = material(0xd9b466)
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.82, 14), material(0xd9b466))
+
+  base.position.y = 0.58
+  dome.position.y = 1.16
+  spire.position.y = 2.45
+  addOutlined(group, base, 0.006)
+  addOutlined(group, dome, 0.008)
+  addOutlined(group, spire, 0.004)
+
+  for (let i = -3; i <= 3; i += 1) {
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.82, 0.035), ribs)
+
+    rib.position.set(i * 0.25, 1.62 - Math.abs(i) * 0.07, 0.26)
+    rib.rotation.z = i * -0.12
+    group.add(rib)
+  }
+
+  group.scale.set(1.35, 1.35, 1.35)
+
+  return group
+}
+
 function addAmbientDetails(scene) {
   const clouds = []
   const trees = []
+  const cloudCount = PERFORMANCE_MODE ? 3 : 8
 
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < cloudCount; i += 1) {
     const cloud = new THREE.Group()
+    const puffCount = PERFORMANCE_MODE ? 2 : 4
 
-    for (let puff = 0; puff < 4; puff += 1) {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32 + puff * 0.025, 12, 8), material(0xffffff))
+    for (let puff = 0; puff < puffCount; puff += 1) {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32 + puff * 0.025, 12, 8), material(0xfff4ea))
 
       mesh.position.set(puff * 0.32, Math.sin(puff) * 0.05, 0)
       addOutlined(cloud, mesh, 0.008)
@@ -2407,22 +3071,81 @@ function addAmbientDetails(scene) {
   return { clouds, trees }
 }
 
+const textureCache = new Map()
+
 function material(color) {
-  return new THREE.MeshToonMaterial({ color })
+  return new THREE.MeshLambertMaterial({
+    color,
+    map: getPaintTexture(color),
+  })
 }
 
 function addOutlined(parent, mesh, thickness) {
-  mesh.castShadow = true
+  const skipOutline = PERFORMANCE_MODE && thickness < 0.008
+
+  mesh.castShadow = !PERFORMANCE_MODE || thickness >= 0.012
+  mesh.receiveShadow = !PERFORMANCE_MODE || thickness >= 0.01
   parent.add(mesh)
+
+  if (skipOutline) {
+    return
+  }
 
   const outline = mesh.clone()
 
   outline.material = new THREE.MeshBasicMaterial({
-    color: INK,
+    color: 0x6b625a,
+    opacity: 0.26,
     side: THREE.BackSide,
+    transparent: true,
   })
   outline.scale.multiplyScalar(1 + thickness)
   outline.castShadow = false
   outline.receiveShadow = false
   parent.add(outline)
+}
+
+function getPaintTexture(color) {
+  if (textureCache.has(color)) {
+    return textureCache.get(color)
+  }
+
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+
+  canvas.width = 64
+  canvas.height = 64
+  if (!context) {
+    return null
+  }
+
+  const base = new THREE.Color(color)
+
+  context.fillStyle = `#${base.getHexString()}`
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  for (let i = 0; i < 42; i += 1) {
+    const mix = base.clone().lerp(new THREE.Color(i % 2 === 0 ? 0xffffff : 0x5f5148), i % 2 === 0 ? 0.12 : 0.08)
+    const alpha = i % 2 === 0 ? 0.28 : 0.18
+
+    context.strokeStyle = `rgba(${Math.round(mix.r * 255)}, ${Math.round(mix.g * 255)}, ${Math.round(mix.b * 255)}, ${alpha})`
+    context.lineWidth = 1 + (i % 3)
+    context.beginPath()
+    context.moveTo((i * 19) % 64, -8 + ((i * 11) % 24))
+    context.lineTo(-8 + ((i * 7) % 32), 72 - ((i * 13) % 20))
+    context.stroke()
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(2, 2)
+  texture.colorSpace = THREE.SRGBColorSpace
+  textureCache.set(color, texture)
+
+  return texture
+}
+
+function tintColor(color, target, amount) {
+  return new THREE.Color(color).lerp(new THREE.Color(target), amount).getHex()
 }

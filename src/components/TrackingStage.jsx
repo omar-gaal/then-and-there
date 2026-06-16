@@ -2,8 +2,12 @@ import Webcam from "react-webcam";
 import { VIDEO_CONSTRAINTS } from "../handTracking";
 
 export function TrackingStage({
+  activeHoverId,
   canvasRef,
+  countdown,
   game,
+  mapHoverRef,
+  onBackToMap,
   onCameraError,
   onCameraReady,
   isLoading,
@@ -11,6 +15,7 @@ export function TrackingStage({
   onPointerAim,
   onStartCamera,
   onStartRound,
+  playAgainHoverRef,
   puckRef,
   stageRef,
   webcamRef
@@ -99,9 +104,20 @@ export function TrackingStage({
           <strong>
             {game.status === "finished" ? `${game.score} pts` : "Ready"}
           </strong>
-          <button type="button" onClick={onStartRound}>
-            {game.status === "finished" ? "Play again" : "Start round"}
-          </button>
+          {game.status === "finished" ? (
+            <div className="post-round-actions">
+              <button type="button" onClick={onStartRound} ref={playAgainHoverRef}>
+                {activeHoverId === "again" && countdown !== null ? countdown || "✓" : "Play again"}
+              </button>
+              <button type="button" className="paris-map-button" onClick={onBackToMap} ref={mapHoverRef}>
+                {activeHoverId === "map" && countdown !== null ? countdown || "✓" : "Map"}
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={onStartRound}>
+              Start round
+            </button>
+          )}
         </div>
       )}
     </div>

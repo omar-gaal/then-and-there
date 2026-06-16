@@ -76,6 +76,13 @@ export const READY_STATUS = {
     walkingConfidence: 0,
     walking: false,
   },
+  performance: {
+    avgFrameMs: 0,
+    avgHandMs: 0,
+    avgPoseMs: 0,
+    avgPostMs: 0,
+    mediaPipeActive: false,
+  },
   pinching: false,
 }
 

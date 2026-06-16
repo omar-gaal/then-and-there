@@ -1,6 +1,7 @@
 import Webcam from 'react-webcam'
 
 export function AmsterdamStage({
+  activeHoverId,
   canvasRef,
   countdown,
   fingerPos,
@@ -11,6 +12,8 @@ export function AmsterdamStage({
   isCalibrated,
   isLoading,
   isRunning,
+  mapHoverRef,
+  onBackToMap,
   onCameraError,
   onCameraReady,
   onHandCameraReady,
@@ -18,6 +21,9 @@ export function AmsterdamStage({
   onStartCamera,
   onStartRound,
   preRoundCountdown,
+  runAgainHoverRef,
+  stageRef,
+  startHoverRef,
   tracking,
   videoConstraints,
   webcamRef,
@@ -26,7 +32,7 @@ export function AmsterdamStage({
   const showFingerCursor = showHandTracking && fingerPos
 
   return (
-    <div className="amsterdam-stage" data-round={game.status}>
+    <div className="amsterdam-stage" data-round={game.status} ref={stageRef}>
       <div className="canal-sky"><span></span><span></span><span></span></div>
       <div className="canal-water"></div>
       <div className="tulip-track" aria-hidden="true">
@@ -91,7 +97,7 @@ export function AmsterdamStage({
         <div className="round-overlay">
           <p>Amsterdam challenge</p>
           <strong>Jump the tulips</strong>
-          <HoverZone countdown={countdown} label={isLoading ? 'Loading…' : 'Start'} onClick={onStartCamera} disabled={isLoading} />
+          <HoverZone countdown={countdown} label={isLoading ? 'Loading…' : 'Start'} onClick={onStartCamera} disabled={isLoading} targetRef={startHoverRef} />
           <p className="hover-hint">{fingerPos ? 'Hold still…' : 'Point your finger at the button'}</p>
         </div>
       )}
@@ -103,11 +109,26 @@ export function AmsterdamStage({
           <strong>{game.score} pts</strong>
           {game.funFact && (
             <div className="fun-fact-card">
-              <span className="fun-fact-label">🌷 Amsterdam fun fact</span>
+              <span className="fun-fact-label">Amsterdam fun fact</span>
               <p className="fun-fact-text">{game.funFact}</p>
             </div>
           )}
-          <HoverZone countdown={countdown} label="Run again" onClick={onStartRound} />
+          <div className="post-round-actions">
+            <HoverZone
+              countdown={activeHoverId === 'again' ? countdown : null}
+              label="Run again"
+              onClick={onStartRound}
+              targetRef={runAgainHoverRef}
+              variant="again"
+            />
+            <HoverZone
+              countdown={activeHoverId === 'map' ? countdown : null}
+              label="Map"
+              onClick={onBackToMap}
+              targetRef={mapHoverRef}
+              variant="map"
+            />
+          </div>
           <p className="hover-hint">{fingerPos ? 'Hold still…' : 'Point your finger at the button'}</p>
         </div>
       )}
@@ -143,9 +164,9 @@ export function AmsterdamStage({
   )
 }
 
-function HoverZone({ countdown, label, onClick, disabled }) {
+function HoverZone({ countdown, label, onClick, disabled, targetRef, variant = 'start' }) {
   return (
-    <div className="hover-zone">
+    <div className="hover-zone" data-variant={variant} ref={targetRef}>
       <button type="button" className="hover-start-btn" onClick={onClick} disabled={disabled}>
         {disabled ? 'Loading…' : countdown !== null ? (countdown || '✓') : label}
       </button>
