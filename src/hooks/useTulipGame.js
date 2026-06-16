@@ -4,7 +4,7 @@ const ROUND_SECONDS = 20;
 const STARTING_LIVES = 3;
 const PLAYER_X = 0.2;
 const GRAVITY = 2.3;
-const JUMP_VELOCITY = 1.8;
+const JUMP_VELOCITY = 2.15;
 const CLEAR_HEIGHT = 0.14;
 const TULIP_KINDS = ["red", "yellow", "pink", "purple"];
 
