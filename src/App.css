@@ -803,7 +803,7 @@ h1 {
   overflow: hidden;
   border: 1px solid rgba(36, 49, 47, 0.18);
   border-radius: 8px;
-  background: #d7edf1;
+  background: #f3d8c8;
   box-shadow: 0 24px 70px rgba(28, 34, 30, 0.16);
 }
 
@@ -824,23 +824,12 @@ h1 {
   position: absolute;
   inset: 0;
   background:
-    repeating-linear-gradient(
-      8deg,
-      rgba(36, 49, 47, 0.035) 0 1px,
-      transparent 1px 9px
-    ),
-    radial-gradient(
-      circle at 18% 24%,
-      rgba(244, 181, 173, 0.13),
-      transparent 22%
-    ),
-    radial-gradient(
-      circle at 78% 38%,
-      rgba(246, 213, 110, 0.12),
-      transparent 20%
-    );
+    repeating-linear-gradient(8deg, rgba(36, 49, 47, 0.035) 0 1px, transparent 1px 9px),
+    repeating-linear-gradient(96deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 11px),
+    radial-gradient(circle at 18% 24%, rgba(244, 181, 173, 0.15), transparent 22%),
+    radial-gradient(circle at 78% 38%, rgba(226, 198, 111, 0.13), transparent 20%);
   mix-blend-mode: multiply;
-  opacity: 0.68;
+  opacity: 0.72;
   pointer-events: none;
 }
 

@@ -54,6 +54,7 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
   const directionRef = useRef({ rawTurn: 0, x: 0, z: -1 })
   const smoothedMotionRef = useRef(READY_STATUS.motion)
   const smoothedReachRef = useRef(READY_STATUS.handReach)
+  const performanceRef = useRef(READY_STATUS.performance)
 
   const [isRunning, setIsRunning] = useState(false)
   const [tracking, setTracking] = useState(READY_STATUS)
@@ -63,6 +64,10 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
 
     animationRef.current = 0
     lastVideoTimeRef.current = -1
+    performanceRef.current = {
+      ...performanceRef.current,
+      mediaPipeActive: false,
+    }
 
     clearCanvas(canvasRef.current)
     showSearchingPuck(puckRef.current)
@@ -84,10 +89,16 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
     resizeCanvasToVideo(canvas, video)
 
     if (hasNewVideoFrame(video, lastVideoTimeRef.current)) {
+      const frameStartedAt = performance.now()
       lastVideoTimeRef.current = video.currentTime
       const timestamp = performance.now()
+      const handStartedAt = performance.now()
       const results = handLandmarker.detectForVideo(video, timestamp)
+      const handMs = performance.now() - handStartedAt
+      const poseStartedAt = performance.now()
       const poseResults = poseLandmarker.detectForVideo(video, timestamp)
+      const poseMs = performance.now() - poseStartedAt
+      const postStartedAt = performance.now()
       const hands = createTrackedHands(results)
       const activeHand = chooseActiveHand(hands)
       const landmarks = activeHand?.landmarks
@@ -103,13 +114,19 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
       )
       // Hand smoothing tuning lives here; Playtest Settings can adjust it live.
       const handReach = updateHandReach(activeHand, smoothedReachRef, playtestSettingsRef.current)
+      const trackingPerformance = updateTrackingPerformance(performanceRef, {
+        frameMs: performance.now() - frameStartedAt,
+        handMs,
+        poseMs,
+        postMs: performance.now() - postStartedAt,
+      })
 
       if (landmarks) {
         drawTracking(canvas, results.landmarks, poseLandmarks)
         const gesture = getHandGesture(landmarks)
 
         movePuckWithGesture(gesture, puck)
-        setTracking(createTrackingStatus(results, gesture, poseLandmarks, poseTracking, hands, activeHand, handReach))
+        setTracking(createTrackingStatus(results, gesture, poseLandmarks, poseTracking, hands, activeHand, handReach, trackingPerformance))
       } else {
         if (poseLandmarks) {
           drawTracking(canvas, null, poseLandmarks)
@@ -117,7 +134,7 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
           clearCanvas(canvas)
         }
         showSearchingPuck(puck)
-        setTracking(createSearchingStatus(poseLandmarks, poseTracking, hands, handReach))
+        setTracking(createSearchingStatus(poseLandmarks, poseTracking, hands, handReach, trackingPerformance))
       }
     }
 
@@ -214,7 +231,8 @@ function createSearchingStatus(
   poseLandmarks,
   poseTracking = createEmptyPoseTracking(),
   hands = createEmptyHands(),
-  handReach = READY_STATUS.handReach
+  handReach = READY_STATUS.handReach,
+  performance = READY_STATUS.performance
 ) {
   return {
     ...READY_STATUS,
@@ -228,10 +246,11 @@ function createSearchingStatus(
     bodyCenter: poseTracking.bodyCenter,
     pose: poseTracking.pose,
     motion: poseTracking.motion,
+    performance,
   }
 }
 
-function createTrackingStatus(results, gesture, poseLandmarks, poseTracking, hands, activeHand, handReach) {
+function createTrackingStatus(results, gesture, poseLandmarks, poseTracking, hands, activeHand, handReach, performance = READY_STATUS.performance) {
   const hand = activeHand?.summary ?? results.handednesses?.[0]?.[0]
 
   return {
@@ -248,8 +267,29 @@ function createTrackingStatus(results, gesture, poseLandmarks, poseTracking, han
     bodyCenter: poseTracking.bodyCenter,
     pose: poseTracking.pose,
     motion: poseTracking.motion,
+    performance,
     pinching: gesture.isPinching,
   }
+}
+
+function updateTrackingPerformance(performanceRef, sample) {
+  performanceRef.current = {
+    avgFrameMs: smoothPerformanceMetric(performanceRef.current.avgFrameMs, sample.frameMs),
+    avgHandMs: smoothPerformanceMetric(performanceRef.current.avgHandMs, sample.handMs),
+    avgPoseMs: smoothPerformanceMetric(performanceRef.current.avgPoseMs, sample.poseMs),
+    avgPostMs: smoothPerformanceMetric(performanceRef.current.avgPostMs, sample.postMs),
+    mediaPipeActive: true,
+  }
+
+  return performanceRef.current
+}
+
+function smoothPerformanceMetric(current, next, smoothing = 0.16) {
+  if (!Number.isFinite(current) || current === 0) {
+    return next
+  }
+
+  return current + (next - current) * smoothing
 }
 
 function createErrorStatus(label) {
