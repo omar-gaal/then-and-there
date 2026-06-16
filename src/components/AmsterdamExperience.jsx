@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTulipGame } from '../hooks/useTulipGame'
 import { usePoseTracking } from '../hooks/usePoseTracking'
 import { useHandHover } from '../hooks/useHandHover'
@@ -9,11 +9,9 @@ import { StatusPill } from './StatusPill'
 
 const AUTO_START_SECONDS = 3
 
-// The hover zone covers the lower-center of the stage where the start button lives
-const HOVER_TARGET = { x: 0.5, y: 0.62, radius: 0.22 }
 const COUNTDOWN_SECONDS = 3
 
-export function AmsterdamExperience() {
+export function AmsterdamExperience({ onBackToMap }) {
   const pose = usePoseTracking()
   const hand = useHandHover()
   const {
@@ -45,9 +43,26 @@ export function AmsterdamExperience() {
   })
 
   const [countdown, setCountdown] = useState(null)
+  const [activeHoverId, setActiveHoverId] = useState(null)
   const hoverStartRef = useRef(null)
+  const hoverTargetIdRef = useRef(null)
   const firedRef = useRef(false)
+  const mapHoverRef = useRef(null)
   const [preRoundCountdown, setPreRoundCountdown] = useState(null)
+  const runAgainHoverRef = useRef(null)
+  const stageRef = useRef(null)
+  const startHoverRef = useRef(null)
+
+  const handleBackToMap = useCallback(() => {
+    resetRound()
+    stopCamera()
+    stopHand()
+    setCountdown(null)
+    setActiveHoverId(null)
+    hoverTargetIdRef.current = null
+    firedRef.current = false
+    onBackToMap?.()
+  }, [onBackToMap, resetRound, stopCamera, stopHand])
 
   // Resume hand tracking whenever the round ends so user can hover "Run again"
   useEffect(() => {
@@ -58,7 +73,9 @@ export function AmsterdamExperience() {
     if (game.status === 'playing') {
       firedRef.current = false
       hoverStartRef.current = null
+      hoverTargetIdRef.current = null
       setCountdown(null)
+      setActiveHoverId(null)
     }
   }, [game.status, resumeHand])
 
@@ -69,27 +86,56 @@ export function AmsterdamExperience() {
 
     if (!isPreGame && !isPostRound) {
       hoverStartRef.current = null
+      hoverTargetIdRef.current = null
       if (!isPostRound) firedRef.current = false
       setCountdown(null)
+      setActiveHoverId(null)
       return
     }
 
     if (!fingerPos) {
       hoverStartRef.current = null
+      hoverTargetIdRef.current = null
       setCountdown(null)
+      setActiveHoverId(null)
       return
     }
 
-    const dist = Math.hypot(
-      fingerPos.x - HOVER_TARGET.x,
-      fingerPos.y - HOVER_TARGET.y,
-    )
+    const stageRect = stageRef.current?.getBoundingClientRect()
+    const hoverTargets = isPostRound
+      ? [
+          { id: 'again', ref: runAgainHoverRef },
+          { id: 'map', ref: mapHoverRef },
+        ]
+      : [{ id: 'start', ref: startHoverRef }]
+    const hoverTarget = hoverTargets.find((target) => {
+      const rect = target.ref.current?.getBoundingClientRect()
 
-    if (dist > HOVER_TARGET.radius) {
+      if (!stageRect || !rect) {
+        return false
+      }
+
+      const pointX = stageRect.left + fingerPos.x * stageRect.width
+      const pointY = stageRect.top + fingerPos.y * stageRect.height
+
+      return pointX >= rect.left && pointX <= rect.right && pointY >= rect.top && pointY <= rect.bottom
+    })
+
+    if (!hoverTarget) {
       hoverStartRef.current = null
+      hoverTargetIdRef.current = null
       setCountdown(null)
+      setActiveHoverId(null)
       return
     }
+
+    if (hoverTargetIdRef.current !== hoverTarget.id) {
+      hoverStartRef.current = null
+      firedRef.current = false
+    }
+
+    hoverTargetIdRef.current = hoverTarget.id
+    setActiveHoverId(hoverTarget.id)
 
     if (hoverStartRef.current === null) hoverStartRef.current = Date.now()
 
@@ -102,11 +148,13 @@ export function AmsterdamExperience() {
       stopHand()
       if (isPreGame) {
         startCamera()
+      } else if (hoverTarget.id === 'map') {
+        handleBackToMap()
       } else {
         startRound()
       }
     }
-  }, [fingerPos, game.status, isLoading, isRunning, startCamera, startRound, stopHand])
+  }, [fingerPos, game.status, handleBackToMap, isLoading, isRunning, startCamera, startRound, stopHand])
 
   // After calibration completes, count down then auto-start the round
   useEffect(() => {
@@ -130,6 +178,8 @@ export function AmsterdamExperience() {
     resetRound()
     stopCamera()
     setCountdown(null)
+    setActiveHoverId(null)
+    hoverTargetIdRef.current = null
     firedRef.current = false
   }
 
@@ -141,6 +191,7 @@ export function AmsterdamExperience() {
       </header>
       <section className="workspace" aria-label="Amsterdam tulip jumping game">
         <AmsterdamStage
+          activeHoverId={activeHoverId}
           canvasRef={poseCanvasRef}
           countdown={countdown}
           fingerPos={fingerPos}
@@ -148,10 +199,10 @@ export function AmsterdamExperience() {
           handCanvasRef={handCanvasRef}
           handIsReady={handIsReady}
           handWebcamRef={handWebcamRef}
-          hoverTarget={HOVER_TARGET}
           isCalibrated={tracking.isCalibrated}
           isLoading={isLoading}
           isRunning={isRunning}
+          onBackToMap={handleBackToMap}
           onCameraError={handleCameraError}
           onCameraReady={handleCameraReady}
           onHandCameraReady={handleHandCameraReady}
@@ -159,6 +210,10 @@ export function AmsterdamExperience() {
           onStartCamera={startCamera}
           onStartRound={startRound}
           preRoundCountdown={preRoundCountdown}
+          mapHoverRef={mapHoverRef}
+          runAgainHoverRef={runAgainHoverRef}
+          stageRef={stageRef}
+          startHoverRef={startHoverRef}
           tracking={tracking}
           videoConstraints={videoConstraints}
           webcamRef={webcamRef}
