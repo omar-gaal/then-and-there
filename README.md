@@ -6,18 +6,20 @@ The project combines gesture-based play with cultural learning. After completing
 
 ## Current Prototype
 
-The current version integrates the webcam hand-tracking starter with a playable Paris pastry-catching prototype. It already provides:
+The current version integrates the webcam hand-tracking starter with a playable Copenhagen bicycle-building prototype. It already provides:
 
 - Browser webcam access
 - Real-time MediaPipe hand landmark detection
 - Index-finger position tracking
 - Pinch, open-hand, and pointing-up gesture detection
-- A pastry basket that follows the visitor's hand
-- Falling pastry targets with collision detection
-- A timed round with score, streaks, misses, and replay
+- A bike-parts magnet that follows the visitor's hand
+- Bicycle parts scattered across the Copenhagen street scene
+- Hand-controlled collection when the visitor reaches a part
+- A timed search round with score, streaks, and replay
+- A second assembly phase where collected parts are installed in the correct order
 - A control panel showing live tracking data
 
-This playable prototype is the technical foundation for the Paris experience and future gesture-controlled interactions.
+This playable prototype is the technical foundation for the Copenhagen experience and future gesture-controlled interactions.
 
 ## Planned Experience
 
@@ -48,11 +50,12 @@ Jump over rows of tulips using full-body movement.
 
 ### Copenhagen
 
-Build a bicycle with hand gestures or ride it by alternating knee movements.
+Build a bicycle by first finding scattered parts around a Copenhagen street, then assembling them in order.
 
-- Tracking: Hand or pose tracking
-- Game logic: Drag-and-drop bike parts or detect pedalling
-- Visuals: Copenhagen city streets
+- Tracking: MediaPipe hand tracking
+- Game logic: Reach scattered bike parts with the tracked hand, then click/tap the collected parts in the assembly order
+- Parts: frame, back wheel, front wheel, handlebar, bell
+- Visuals: Copenhagen canal buildings, street, and cycle lane
 
 ## Tech Stack
 
@@ -106,12 +109,13 @@ npm run lint      # Check the code with ESLint
 src/
   App.jsx                         Main prototype screen
   components/
-    TrackingStage.jsx             Webcam, landmark canvas, and controlled basket
+    TrackingStage.jsx             Webcam, landmark canvas, street scene, and assembly table
     ControlPanel.jsx              Live gesture and confidence information
     StatusPill.jsx                Current tracking status
   hooks/
+    useBikeGame.js                Copenhagen bike search and assembly game logic
     useHandTracking.js            Camera and frame-tracking loop
-  gestures.js                     Gesture rules and basket movement
+  gestures.js                     Gesture rules and hand-controlled magnet movement
   handTracking.js                 MediaPipe setup and drawing helpers
   App.css                         Component styles
   index.css                       Global styles
@@ -129,21 +133,21 @@ public/
 4. `getHandGesture` converts landmarks into useful gesture values.
 5. React and Canvas display the result.
 
-The most useful output for the Paris game is `gesture.indexTip`, which contains normalized `x` and `y` coordinates. These coordinates can be used for collision detection with falling pastries.
+The most useful output for the Copenhagen game is `gesture.indexTip`, which contains normalized `x` and `y` coordinates. These coordinates are used for collision detection with bike parts scattered around the street.
 
 ## Development Priorities
 
-1. Keep the integrated hand-tracking and pastry-catching prototype working reliably.
-2. Replace placeholder pastries with final Paris artwork and tune difficulty.
+1. Keep the integrated hand-tracking and bicycle-building prototype working reliably.
+2. Replace CSS placeholder parts with final Copenhagen artwork and tune difficulty.
 3. Add reusable score, timer, and completion logic.
-4. Add pose tracking for Amsterdam and Copenhagen.
+4. Add pose tracking for Amsterdam and optional Copenhagen pedalling interactions.
 5. Build the complete screen flow and connect all city experiences.
 6. Add final visuals, animations, cultural facts, and polish.
 
 ## Team Responsibilities
 
 - **Paris developer:** Pastry-catching game, collisions, and scoring
-- **Amsterdam and Copenhagen developer:** Tulip-jumping and bicycle games
+- **Amsterdam and Copenhagen developer:** Tulip-jumping and bicycle-building games
 - **Camera and tracking lead:** Reusable hand and pose tracking
 - **Design lead:** Visual identity, city assets, screens, and animations
 - **Integration, UX, and documentation lead:** Navigation, full experience flow, repository, and documentation
@@ -155,9 +159,9 @@ Create a separate branch for each feature and avoid committing directly to `main
 Example:
 
 ```bash
-git switch -c feature/paris-game
+git switch -c feature/copenhagen-bike-game
 git add .
-git commit -m "Build Paris pastry catching prototype"
+git commit -m "Build Copenhagen bike game prototype"
 ```
 
 Keep commits small and clearly named so the team can review and combine work more easily.
@@ -180,6 +184,3 @@ Keep commits small and clearly named so the team can review and combine work mor
 ### MediaPipe model does not load
 
 The current prototype downloads MediaPipe files and the hand model from external URLs. Confirm that the computer has an internet connection, then refresh the page.
-hello world
-
-hi.
