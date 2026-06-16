@@ -16,6 +16,7 @@ export function DebugPanel({
   const rightWrist = tracking.pose?.rightWrist
   const leftShoulder = tracking.pose?.leftShoulder
   const rightShoulder = tracking.pose?.rightShoulder
+  const perf = worldDebug.perf ?? {}
 
   return (
     <div className="debug-panel-shell" data-open={isOpen ? 'true' : 'false'}>
@@ -102,6 +103,24 @@ export function DebugPanel({
           <span>nearby part: {pickupDebug.nearbyPart}</span>
           <span>hands low: {pickupDebug.handsLow ? 'true' : 'false'}</span>
           <span>pickup gesture: {pickupDebug.gestureState}</span>
+          <span>perf fps: {formatSpeed(perf.fps)}</span>
+          <span>perf frame ms: {formatMs(perf.avgFrameMs)}</span>
+          <span>perf meshes: {formatCount(perf.meshCount)}</span>
+          <span>perf draw calls: {formatCount(perf.drawCalls)}</span>
+          <span>perf visible objects: {formatCount(perf.visibleObjects)}</span>
+          <span>perf total objects: {formatCount(perf.totalObjects)}</span>
+          <span>perf render ms: {formatMs(perf.avgRenderMs)}</span>
+          <span>perf ambient loop ms: {formatMs(perf.avgAmbientMs)}</span>
+          <span>perf avatar loop ms: {formatMs(perf.avgAvatarMs)}</span>
+          <span>perf heading loop ms: {formatMs(perf.avgHeadingMs)}</span>
+          <span>perf world/camera ms: {formatMs(perf.avgWorldMs)}</span>
+          <span>perf pickup loop ms: {formatMs(perf.avgPickupMs)}</span>
+          <span>perf map/debug ms: {formatMs(perf.avgMapDebugMs)}</span>
+          <span>MediaPipe active: {perf.mediaPipeActive ? 'true' : 'false'}</span>
+          <span>MediaPipe frame ms: {formatMs(perf.mediaPipeFrameMs)}</span>
+          <span>MediaPipe hand ms: {formatMs(perf.mediaPipeHandMs)}</span>
+          <span>MediaPipe pose ms: {formatMs(perf.mediaPipePoseMs)}</span>
+          <span>MediaPipe post ms: {formatMs(perf.mediaPipePostMs)}</span>
         </div>
 
         <div className="map-gesture-debug" aria-live="polite">
@@ -117,6 +136,14 @@ export function DebugPanel({
 
 function formatSpeed(speed) {
   return (speed ?? 0).toFixed(2)
+}
+
+function formatMs(value) {
+  return `${formatSpeed(value)}ms`
+}
+
+function formatCount(value) {
+  return Math.round(value ?? 0).toString()
 }
 
 function formatPointXY(point) {
