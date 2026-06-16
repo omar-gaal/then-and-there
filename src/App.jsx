@@ -11,7 +11,7 @@ function App() {
   if (screen === "paris") {
     return (
       <main className="app-shell">
-        <ParisExperience />
+        <ParisExperience onBackToMap={() => setScreen("landing")} />
       </main>
     );
   }
@@ -19,7 +19,7 @@ function App() {
   if (screen === "amsterdam") {
     return (
       <main className="app-shell">
-        <AmsterdamExperience />
+        <AmsterdamExperience onBackToMap={() => setScreen("landing")} />
       </main>
     );
   }

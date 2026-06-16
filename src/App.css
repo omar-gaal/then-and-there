@@ -415,7 +415,6 @@ h1 {
   object-fit: contain;
 }
 
-
 .catch-target.is-croissant,
 .catch-target.is-baguette,
 .catch-target.is-eclair {
@@ -616,6 +615,13 @@ h1 {
   text-transform: none;
 }
 
+.post-round-actions {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin: -2px 0 8px;
+}
+
 .control-panel {
   min-width: 0;
   border: 1px solid var(--line);
@@ -764,6 +770,15 @@ h1 {
     font-size: 2.35rem;
   }
 
+  .post-round-actions {
+    gap: 8px;
+  }
+
+  .post-round-actions .hover-zone {
+    width: 96px;
+    height: 96px;
+  }
+
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -807,9 +822,21 @@ h1 {
   position: absolute;
   inset: 0;
   background:
-    repeating-linear-gradient(8deg, rgba(36, 49, 47, 0.035) 0 1px, transparent 1px 9px),
-    radial-gradient(circle at 18% 24%, rgba(244, 181, 173, 0.13), transparent 22%),
-    radial-gradient(circle at 78% 38%, rgba(246, 213, 110, 0.12), transparent 20%);
+    repeating-linear-gradient(
+      8deg,
+      rgba(36, 49, 47, 0.035) 0 1px,
+      transparent 1px 9px
+    ),
+    radial-gradient(
+      circle at 18% 24%,
+      rgba(244, 181, 173, 0.13),
+      transparent 22%
+    ),
+    radial-gradient(
+      circle at 78% 38%,
+      rgba(246, 213, 110, 0.12),
+      transparent 20%
+    );
   mix-blend-mode: multiply;
   opacity: 0.68;
   pointer-events: none;
@@ -1005,7 +1032,11 @@ h1 {
   border-radius: 8px;
   background:
     linear-gradient(rgba(255, 250, 239, 0.92), rgba(255, 250, 239, 0.92)),
-    repeating-linear-gradient(0deg, transparent 0 19px, rgba(117, 83, 52, 0.055) 19px 20px);
+    repeating-linear-gradient(
+      0deg,
+      transparent 0 19px,
+      rgba(117, 83, 52, 0.055) 19px 20px
+    );
   color: #24312f;
   box-shadow: 0 22px 58px rgba(28, 34, 30, 0.26);
   transform: rotate(-0.25deg);
@@ -1055,9 +1086,23 @@ h1 {
   border: 1px solid rgba(117, 83, 52, 0.16);
   border-radius: 8px;
   background:
-    linear-gradient(90deg, rgba(118, 213, 203, 0.18), transparent 20%, transparent 80%, rgba(118, 213, 203, 0.2)),
-    repeating-linear-gradient(90deg, rgba(36, 49, 47, 0.035) 0 1px, transparent 1px 28px),
-    repeating-linear-gradient(0deg, rgba(36, 49, 47, 0.025) 0 1px, transparent 1px 28px),
+    linear-gradient(
+      90deg,
+      rgba(118, 213, 203, 0.18),
+      transparent 20%,
+      transparent 80%,
+      rgba(118, 213, 203, 0.2)
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(36, 49, 47, 0.035) 0 1px,
+      transparent 1px 28px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(36, 49, 47, 0.025) 0 1px,
+      transparent 1px 28px
+    ),
     #fff4dc;
 }
 
@@ -1091,7 +1136,10 @@ h1 {
 .town-map-street span,
 .town-map-left-street span {
   position: absolute;
-  background: repeating-linear-gradient(rgba(117, 83, 52, 0.42) 0 12px, transparent 12px 24px);
+  background: repeating-linear-gradient(
+    rgba(117, 83, 52, 0.42) 0 12px,
+    transparent 12px 24px
+  );
 }
 
 .town-map-street span {
@@ -1107,7 +1155,11 @@ h1 {
   right: 6%;
   top: 50%;
   height: 2px;
-  background: repeating-linear-gradient(90deg, rgba(117, 83, 52, 0.42) 0 12px, transparent 12px 24px);
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(117, 83, 52, 0.42) 0 12px,
+    transparent 12px 24px
+  );
   transform: translateY(-50%);
 }
 
@@ -1747,6 +1799,10 @@ h1 {
   margin: 4px 0 8px;
 }
 
+.post-round-actions .hover-zone {
+  margin: 0;
+}
+
 .hover-ring {
   position: absolute;
   inset: 0;
@@ -1795,6 +1851,24 @@ h1 {
   transform: scale(1.05);
 }
 
+.hover-zone[data-variant="map"] .hover-start-btn {
+  background: linear-gradient(135deg, #1fbba6, #117f76);
+  color: #ffffff;
+}
+
+.hover-zone[data-variant="map"] .hover-start-btn:hover {
+  background: linear-gradient(135deg, #23cdb6, #159188);
+}
+
+.round-overlay .paris-map-button {
+  background: linear-gradient(135deg, #5546cb, #7b6cf4);
+  color: #ffffff;
+}
+
+.round-overlay .paris-map-button:hover {
+  background: linear-gradient(135deg, #6253d9, #8879ff);
+}
+
 .hover-hint {
   margin: 0 !important;
   font-size: 0.76rem !important;
@@ -1814,7 +1888,12 @@ h1 {
   box-shadow: 0 0 0 4px rgba(255, 220, 93, 0.3);
   transform: translate(-50%, -50%);
   pointer-events: none;
-  transition: left 60ms linear, top 60ms linear, width 200ms ease, height 200ms ease, box-shadow 200ms ease;
+  transition:
+    left 60ms linear,
+    top 60ms linear,
+    width 200ms ease,
+    height 200ms ease,
+    box-shadow 200ms ease;
 }
 
 .hand-cursor[data-hovering="true"] {
