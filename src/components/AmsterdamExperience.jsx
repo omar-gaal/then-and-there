@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useRef, useState } from 'react'
 import { useTulipGame } from '../hooks/useTulipGame'
 import { usePoseTracking } from '../hooks/usePoseTracking'
@@ -15,10 +16,32 @@ const COUNTDOWN_SECONDS = 3
 export function AmsterdamExperience() {
   const pose = usePoseTracking()
   const hand = useHandHover()
+  const {
+    canvasRef: poseCanvasRef,
+    handleCameraError,
+    handleCameraReady,
+    isLoading,
+    isRunning,
+    jumpCount,
+    startCamera,
+    stopCamera,
+    tracking,
+    videoConstraints,
+    webcamRef,
+  } = pose
+  const {
+    canvasRef: handCanvasRef,
+    fingerPos,
+    handleCameraReady: handleHandCameraReady,
+    isReady: handIsReady,
+    resume: resumeHand,
+    stop: stopHand,
+    webcamRef: handWebcamRef,
+  } = hand
   const { game, resetRound, startRound, triggerJump } = useTulipGame({
-    isCalibrated: pose.tracking.isCalibrated,
-    isRunning: pose.isRunning,
-    jumpCount: pose.jumpCount,
+    isCalibrated: tracking.isCalibrated,
+    isRunning,
+    jumpCount,
   })
 
   const [countdown, setCountdown] = useState(null)
@@ -29,7 +52,7 @@ export function AmsterdamExperience() {
   // Resume hand tracking whenever the round ends so user can hover "Run again"
   useEffect(() => {
     if (game.status === 'finished') {
-      hand.resume()
+      resumeHand()
     }
     // When a new round starts, clear any stale hover state
     if (game.status === 'playing') {
@@ -37,12 +60,12 @@ export function AmsterdamExperience() {
       hoverStartRef.current = null
       setCountdown(null)
     }
-  }, [game.status, hand.resume])
+  }, [game.status, resumeHand])
 
   // Hover over zone → countdown → start camera (pre-game) or restart round (post-round)
   useEffect(() => {
-    const isPreGame = !pose.isRunning && !pose.isLoading
-    const isPostRound = pose.isRunning && game.status === 'finished'
+    const isPreGame = !isRunning && !isLoading
+    const isPostRound = isRunning && game.status === 'finished'
 
     if (!isPreGame && !isPostRound) {
       hoverStartRef.current = null
@@ -51,15 +74,15 @@ export function AmsterdamExperience() {
       return
     }
 
-    if (!hand.fingerPos) {
+    if (!fingerPos) {
       hoverStartRef.current = null
       setCountdown(null)
       return
     }
 
     const dist = Math.hypot(
-      hand.fingerPos.x - HOVER_TARGET.x,
-      hand.fingerPos.y - HOVER_TARGET.y,
+      fingerPos.x - HOVER_TARGET.x,
+      fingerPos.y - HOVER_TARGET.y,
     )
 
     if (dist > HOVER_TARGET.radius) {
@@ -76,23 +99,23 @@ export function AmsterdamExperience() {
 
     if (remaining === 0 && !firedRef.current) {
       firedRef.current = true
-      hand.stop()
+      stopHand()
       if (isPreGame) {
-        pose.startCamera()
+        startCamera()
       } else {
         startRound()
       }
     }
-  }, [hand.fingerPos, hand.stop, pose.isRunning, pose.isLoading, pose.startCamera, game.status, startRound])
+  }, [fingerPos, game.status, isLoading, isRunning, startCamera, startRound, stopHand])
 
   // After calibration completes, count down then auto-start the round
   useEffect(() => {
-    if (!pose.tracking.isCalibrated || game.status !== 'ready') {
+    if (!tracking.isCalibrated || game.status !== 'ready') {
       setPreRoundCountdown(null)
       return
     }
     setPreRoundCountdown(AUTO_START_SECONDS)
-  }, [pose.tracking.isCalibrated, game.status])
+  }, [tracking.isCalibrated, game.status])
 
   useEffect(() => {
     if (preRoundCountdown === null || preRoundCountdown <= 0) {
@@ -105,7 +128,7 @@ export function AmsterdamExperience() {
 
   function handleStopCamera() {
     resetRound()
-    pose.stopCamera()
+    stopCamera()
     setCountdown(null)
     firedRef.current = false
   }
@@ -114,39 +137,39 @@ export function AmsterdamExperience() {
     <>
       <header className="topbar">
         <div><p className="eyebrow">Amsterdam prototype</p><h1>Tulip Canal Run</h1></div>
-        <StatusPill mode={pose.tracking.mode} label={pose.tracking.label} />
+        <StatusPill mode={tracking.mode} label={tracking.label} />
       </header>
       <section className="workspace" aria-label="Amsterdam tulip jumping game">
         <AmsterdamStage
-          canvasRef={pose.canvasRef}
+          canvasRef={poseCanvasRef}
           countdown={countdown}
-          fingerPos={hand.fingerPos}
+          fingerPos={fingerPos}
           game={game}
-          handCanvasRef={hand.canvasRef}
-          handIsReady={hand.isReady}
-          handWebcamRef={hand.webcamRef}
+          handCanvasRef={handCanvasRef}
+          handIsReady={handIsReady}
+          handWebcamRef={handWebcamRef}
           hoverTarget={HOVER_TARGET}
-          isCalibrated={pose.tracking.isCalibrated}
-          isLoading={pose.isLoading}
-          isRunning={pose.isRunning}
-          onCameraError={pose.handleCameraError}
-          onCameraReady={pose.handleCameraReady}
-          onHandCameraReady={hand.handleCameraReady}
+          isCalibrated={tracking.isCalibrated}
+          isLoading={isLoading}
+          isRunning={isRunning}
+          onCameraError={handleCameraError}
+          onCameraReady={handleCameraReady}
+          onHandCameraReady={handleHandCameraReady}
           onJump={triggerJump}
-          onStartCamera={pose.startCamera}
+          onStartCamera={startCamera}
           onStartRound={startRound}
           preRoundCountdown={preRoundCountdown}
-          tracking={pose.tracking}
-          videoConstraints={pose.videoConstraints}
-          webcamRef={pose.webcamRef}
+          tracking={tracking}
+          videoConstraints={videoConstraints}
+          webcamRef={webcamRef}
         />
         <AmsterdamPanel
           game={game}
-          isLoading={pose.isLoading}
-          isRunning={pose.isRunning}
-          onStartCamera={pose.startCamera}
+          isLoading={isLoading}
+          isRunning={isRunning}
+          onStartCamera={startCamera}
           onStopCamera={handleStopCamera}
-          tracking={pose.tracking}
+          tracking={tracking}
         />
       </section>
     </>

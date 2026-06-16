@@ -9,18 +9,19 @@ export function useHandHover() {
   const animationRef = useRef(0)
   const lastVideoTimeRef = useRef(-1)
   const activeRef = useRef(false)
+  const runLoopRef = useRef(() => {})
 
   const [isReady, setIsReady] = useState(false)
   const [fingerPos, setFingerPos] = useState(null) // { x, y } normalized 0-1, mirrored
 
-  function runLoop() {
+  const runLoop = useCallback(() => {
     if (!activeRef.current) return
     const video = webcamRef.current?.video
     const canvas = canvasRef.current
     const landmarker = landmarkerRef.current
 
     if (!video || !canvas || !landmarker) {
-      animationRef.current = requestAnimationFrame(runLoop)
+      animationRef.current = requestAnimationFrame(runLoopRef.current)
       return
     }
 
@@ -46,14 +47,18 @@ export function useHandHover() {
       }
     }
 
-    animationRef.current = requestAnimationFrame(runLoop)
-  }
+    animationRef.current = requestAnimationFrame(runLoopRef.current)
+  }, [])
+
+  useEffect(() => {
+    runLoopRef.current = runLoop
+  }, [runLoop])
 
   const handleCameraReady = useCallback(() => {
     activeRef.current = true
     cancelAnimationFrame(animationRef.current)
     runLoop()
-  }, [])
+  }, [runLoop])
 
   const stop = useCallback(() => {
     activeRef.current = false
@@ -69,7 +74,7 @@ export function useHandHover() {
     activeRef.current = true
     cancelAnimationFrame(animationRef.current)
     runLoop()
-  }, [])
+  }, [runLoop])
 
   useEffect(() => {
     let mounted = true

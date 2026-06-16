@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { movePuckToPoint } from '../gestures'
 import { useCatchGame } from '../hooks/useCatchGame'
 import { useHandTracking } from '../hooks/useHandTracking'
-import { ControlPanel } from './ControlPanel'
+import { ParisPanel } from './ParisPanel'
 import { StatusPill } from './StatusPill'
 import { TrackingStage } from './TrackingStage'
 
@@ -20,7 +20,7 @@ export function ParisExperience() {
       <header className="topbar"><div><p className="eyebrow">Paris prototype</p><h1>Paris Pastry Catch</h1></div><StatusPill mode={tracking.mode} label={tracking.label} /></header>
       <section className="workspace" aria-label="Paris pastry catching game">
         <TrackingStage canvasRef={canvasRef} onCameraError={handleCameraError} onCameraReady={handleCameraReady} isLoading={isLoading} isRunning={isRunning} game={game} onStartCamera={startCamera} onPointerAim={handlePointerAim} onStartRound={startRound} puckRef={puckRef} stageRef={stageRef} webcamRef={webcamRef} />
-        <ControlPanel game={game} isLoading={isLoading} isRunning={isRunning} onStartCamera={startCamera} onStopCamera={stopCamera} tracking={tracking} />
+        <ParisPanel game={game} isLoading={isLoading} isRunning={isRunning} onStartCamera={startCamera} onStopCamera={stopCamera} tracking={tracking} />
       </section>
     </>
   )

@@ -1,15 +1,15 @@
 :root {
-  --bg: #f6f7f3;
+  --bg: #eef7f4;
   --panel: #ffffff;
-  --line: #d9ddd3;
+  --line: #d7ded4;
   --text: #3e4540;
-  --text-strong: #151514;
+  --text-strong: #18211f;
   --button-text: #ffffff;
   --muted: #6f7770;
-  --teal: #1fbba6;
+  --teal: #22b8a0;
   --teal-dark: #117f76;
-  --coral: #f06a57;
-  --amber: #f3a72e;
+  --coral: #e97260;
+  --amber: #f2be4c;
   --focus: rgba(31, 187, 166, 0.35);
   --shadow: 0 24px 70px rgba(28, 34, 30, 0.16);
   --shadow-soft: 0 14px 36px rgba(28, 34, 30, 0.08);
@@ -19,7 +19,8 @@
 
   color: var(--text);
   background:
-    linear-gradient(180deg, rgba(31, 187, 166, 0.06), transparent 360px),
+    linear-gradient(180deg, rgba(106, 188, 224, 0.22), transparent 390px),
+    linear-gradient(135deg, rgba(242, 190, 76, 0.12), transparent 420px),
     var(--bg);
   font-family: var(--font-main);
   font-size: 16px;
