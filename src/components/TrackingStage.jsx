@@ -51,7 +51,7 @@ export function TrackingStage({
         />
       )}
       <canvas ref={canvasRef} className="landmark-layer" aria-hidden="true" />
-      <div className="" aria-hidden="true">
+      <div className="catch-layer" aria-hidden="true">
         {game.items.map((item) => (
           <div
             key={item.id}

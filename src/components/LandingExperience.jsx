@@ -7,7 +7,11 @@ import { StatusPill } from "./StatusPill";
 const GESTURE_TIMEOUT_MS = 10_000;
 const HOLD_TO_SELECT_SECONDS = 3;
 
-export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
+export function LandingExperience({
+  onChooseAmsterdam,
+  onChooseCopenhagen,
+  onChooseParis,
+}) {
   const {
     canvasRef,
     handleCameraReady,
@@ -65,14 +69,21 @@ export function LandingExperience({ onChooseAmsterdam, onChooseParis }) {
           fingerPos={fingerPos}
           label="Paris"
           onChoose={onChooseParis}
-          position={{ x: 0.36, y: 0.84 }}
+          position={{ x: 0.28, y: 0.84 }}
+        />
+        <HoverChoiceButton
+          className="is-copenhagen"
+          fingerPos={fingerPos}
+          label="Copenhagen"
+          onChoose={onChooseCopenhagen}
+          position={{ x: 0.5, y: 0.84 }}
         />
         <HoverChoiceButton
           className="is-amsterdam"
           fingerPos={fingerPos}
           label="Amsterdam"
           onChoose={onChooseAmsterdam}
-          position={{ x: 0.64, y: 0.84 }}
+          position={{ x: 0.72, y: 0.84 }}
         />
       </div>
 
