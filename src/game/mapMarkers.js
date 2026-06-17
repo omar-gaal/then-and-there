@@ -1,10 +1,10 @@
 // Manual paper-map marker positions for the current bike parts.
 export const PART_MAP_POSITIONS = {
-  frontWheel: { mapSide: 'left', progress: 0.18, sidePosition: 0.58, labelOffsetX: -72, labelOffsetY: -16 },
-  rearWheel: { mapSide: 'left', progress: 0.34, sidePosition: 0.75, labelOffsetX: -42, labelOffsetY: -24 },
-  handlebar: { mapSide: 'right', progress: 0.54, sidePosition: 0.24, labelOffsetX: 16, labelOffsetY: -2 },
-  frame: { mapSide: 'left', progress: 0.58, sidePosition: 0.75, labelOffsetX: -44, labelOffsetY: 20 },
-  saddle: { mapSide: 'right', progress: 0.78, sidePosition: 0.60, labelOffsetX: 16, labelOffsetY: -26 },
+  frontWheel: { mapSide: 'left', progress: 0.24, sidePosition: 0.56, labelOffsetX: -72, labelOffsetY: -18 },
+  rearWheel: { mapSide: 'right', progress: 0.33, sidePosition: 0.76, labelOffsetX: 18, labelOffsetY: -16 },
+  handlebar: { mapSide: 'leftStreet', progress: 0.44, sidePosition: 0.36, labelOffsetX: -76, labelOffsetY: -16 },
+  frame: { mapSide: 'right', progress: 0.62, sidePosition: 0.76, labelOffsetX: 18, labelOffsetY: 16 },
+  saddle: { mapSide: 'left', progress: 0.78, sidePosition: 0.58, labelOffsetX: -70, labelOffsetY: 18 },
 }
 
 export function getPartMapPosition(partId) {
