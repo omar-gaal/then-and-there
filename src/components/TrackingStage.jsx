@@ -2,6 +2,7 @@ import Webcam from "react-webcam";
 import { VIDEO_CONSTRAINTS } from "../handTracking";
 
 export function TrackingStage({
+  activeHoverId,
   canvasRef,
   countdown,
   fingerPos,
@@ -11,6 +12,7 @@ export function TrackingStage({
   handWebcamRef,
   isLoading,
   isRunning,
+  mapHoverRef,
   onBackToMap,
   onCameraError,
   onCameraReady,
@@ -18,8 +20,10 @@ export function TrackingStage({
   onPointerAim,
   onStartCamera,
   onStartRound,
+  playAgainHoverRef,
   puckRef,
   stageRef,
+  startHoverRef,
   webcamRef
 }) {
   function handlePointerMove(event) {
@@ -123,10 +127,11 @@ export function TrackingStage({
           <p>Paris challenge</p>
           <strong>Catch the pastries</strong>
           <HoverZone
-            countdown={countdown}
+            countdown={activeHoverId === 'start' ? countdown : null}
             disabled={isLoading}
             label={isLoading ? 'Loading…' : 'Start'}
             onClick={onStartCamera}
+            targetRef={startHoverRef}
           />
           <p className="hover-hint">
             {fingerPos ? 'Hold still…' : 'Point your finger at the button'}
@@ -145,15 +150,25 @@ export function TrackingStage({
               <p className="fun-fact-text">{game.funFact}</p>
             </div>
           )}
-          <HoverZone countdown={countdown} label="Play again" onClick={onStartRound} />
+          <div className="post-round-actions">
+            <HoverZone
+              countdown={activeHoverId === 'again' ? countdown : null}
+              label="Play again"
+              onClick={onStartRound}
+              targetRef={playAgainHoverRef}
+              variant="again"
+            />
+            <HoverZone
+              countdown={activeHoverId === 'map' ? countdown : null}
+              label="Map"
+              onClick={onBackToMap}
+              targetRef={mapHoverRef}
+              variant="map"
+            />
+          </div>
           <p className="hover-hint">
             {fingerPos ? 'Hold still…' : 'Point your finger at the button'}
           </p>
-          {onBackToMap && (
-            <button type="button" className="paris-map-button" onClick={onBackToMap}>
-              Map
-            </button>
-          )}
         </div>
       )}
 
@@ -162,9 +177,9 @@ export function TrackingStage({
   );
 }
 
-export function HoverZone({ countdown, disabled, label, onClick }) {
+export function HoverZone({ countdown, disabled, label, onClick, targetRef, variant = 'start' }) {
   return (
-    <div className="hover-zone">
+    <div className="hover-zone" data-variant={variant} ref={targetRef}>
       <button type="button" className="hover-start-btn" onClick={onClick} disabled={disabled}>
         {disabled ? 'Loading…' : countdown !== null ? (countdown || '✓') : label}
       </button>
