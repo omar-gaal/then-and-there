@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Webcam from "react-webcam";
 import completedBicycleIllustration from "../assets/copenhagen-bicycle-postcard.svg";
 import { VIDEO_CONSTRAINTS } from "../handTracking";
 import { getPartMapPosition } from "../game/mapMarkers";
 import { useCopenhagenTracking } from "../hooks/useCopenhagenTracking";
 import { useMapGestureToggle } from "../hooks/useMapGestureToggle";
-import { PICKUP_ANIMATION_DURATION } from "../scene/constants";
 import { CollectionPanel } from "./CollectionPanel";
 import { DebugPanel } from "./DebugPanel";
 import { ThreeStreetScene } from "./ThreeStreetScene";
@@ -157,6 +156,7 @@ const DEFAULT_WORLD_DEBUG = {
 };
 
 export function CopenhagenExperience({ onBackToCities }) {
+  const completionTriggeredRef = useRef(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [tutorialActive, setTutorialActive] = useState(true);
   const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
@@ -168,6 +168,7 @@ export function CopenhagenExperience({ onBackToCities }) {
   const [completionPhase, setCompletionPhase] = useState("idle");
   const [completionFact, setCompletionFact] = useState("");
   const [completionTriggered, setCompletionTriggered] = useState(false);
+  const [postcardVisible, setPostcardVisible] = useState(false);
   const [runResetKey, setRunResetKey] = useState(0);
   const [isDebugOpen, setIsDebugOpen] = useState(() => {
     try {
@@ -278,8 +279,10 @@ export function CopenhagenExperience({ onBackToCities }) {
   }, [onBackToCities]);
 
   const handlePlayAgain = useCallback(() => {
+    completionTriggeredRef.current = false;
     setCompletionPhase("idle");
     setCompletionTriggered(false);
+    setPostcardVisible(false);
     setCompletionFact("");
     setIsMapOpen(false);
     setMapData(DEFAULT_MAP_DATA);
@@ -298,6 +301,27 @@ export function CopenhagenExperience({ onBackToCities }) {
     setRunResetKey((key) => key + 1);
   }, [resetTutorial]);
 
+  const handlePickupDebug = useCallback((nextPickupDebug) => {
+    setPickupDebug(nextPickupDebug);
+
+    const progressParts = nextPickupDebug.parts ?? FALLBACK_PARTS;
+    const collectedCount = progressParts.filter((part) => part.collected).length;
+    const totalParts = progressParts.length;
+    const completionDetected = totalParts > 0 && collectedCount === totalParts;
+
+    if (!completionDetected || completionTriggeredRef.current) {
+      return;
+    }
+
+    completionTriggeredRef.current = true;
+    setCompletionTriggered(true);
+    setPostcardVisible(true);
+    setCompletionPhase("postcard");
+    setTutorialActive(false);
+    setTutorialDoneMessageVisible(false);
+    setCompletionFact(COMPLETION_FACTS[Math.floor(Math.random() * COMPLETION_FACTS.length)]);
+  }, []);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(DEBUG_OPEN_STORAGE_KEY, String(isDebugOpen));
@@ -305,37 +329,6 @@ export function CopenhagenExperience({ onBackToCities }) {
       // Debug persistence is optional; the panel still works without storage.
     }
   }, [isDebugOpen]);
-
-  useEffect(() => {
-    const totalParts = pickupDebug.totalParts ?? pickupDebug.parts?.length ?? FALLBACK_PARTS.length;
-    const collectedCount = pickupDebug.collectedCount
-      ?? pickupDebug.parts?.filter((part) => part.collected).length
-      ?? 0;
-    const allPartsCollected = totalParts > 0 && collectedCount === totalParts;
-
-    if (!allPartsCollected || completionTriggered) {
-      return undefined;
-    }
-
-    let postcardTimer = 0;
-
-    const triggerTimer = window.setTimeout(() => {
-      setCompletionTriggered(true);
-      setCompletionPhase("found");
-      setTutorialActive(false);
-      setTutorialDoneMessageVisible(false);
-      setCompletionFact(COMPLETION_FACTS[Math.floor(Math.random() * COMPLETION_FACTS.length)]);
-
-      postcardTimer = window.setTimeout(() => {
-        setCompletionPhase("postcard");
-      }, PICKUP_ANIMATION_DURATION * 1000);
-    }, 0);
-
-    return () => {
-      window.clearTimeout(triggerTimer);
-      window.clearTimeout(postcardTimer);
-    };
-  }, [completionTriggered, pickupDebug.collectedCount, pickupDebug.parts, pickupDebug.totalParts]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -567,6 +560,10 @@ export function CopenhagenExperience({ onBackToCities }) {
     shouldRunTutorial,
   ]);
 
+  const progressParts = pickupDebug.parts ?? FALLBACK_PARTS;
+  const collectedCount = progressParts.filter((part) => part.collected).length;
+  const totalParts = progressParts.length;
+
   return (
     <>
       <header className="topbar">
@@ -581,7 +578,7 @@ export function CopenhagenExperience({ onBackToCities }) {
           <ThreeStreetScene
             completionPhase={completionPhase}
             onMapData={setMapData}
-            onPickupDebug={setPickupDebug}
+            onPickupDebug={handlePickupDebug}
             onWorldDebug={setWorldDebug}
             currentTutorialStep={currentTutorialStep}
             resetRunKey={runResetKey}
@@ -605,16 +602,16 @@ export function CopenhagenExperience({ onBackToCities }) {
           )}
 
           <DebugPanel
-            collectedCount={pickupDebug.collectedCount ?? 0}
+            collectedCount={collectedCount}
             completionTriggered={completionTriggered}
             currentAreaId={mapData.areaId}
             isOpen={isDebugOpen}
             isMapOpen={isMapOpen}
             mapGestureDebug={mapGestureDebug}
             onToggle={() => setIsDebugOpen((current) => !current)}
-            postcardVisible={completionPhase === "postcard"}
+            postcardVisible={postcardVisible}
             pickupDebug={pickupDebug}
-            totalParts={pickupDebug.totalParts ?? pickupDebug.parts?.length ?? FALLBACK_PARTS.length}
+            totalParts={totalParts}
             tracking={tracking}
             worldDebug={worldDebug}
           />
@@ -742,7 +739,7 @@ export function CopenhagenExperience({ onBackToCities }) {
 
           {isMapOpen && <TownMap mapData={mapData} onClose={() => setIsMapOpen(false)} />}
 
-          {completionPhase === "postcard" && (
+          {postcardVisible && (
             <div className="completion-postcard-backdrop" aria-live="polite">
               <section className="completion-postcard">
                 <span>Copenhagen Postcard</span>
@@ -769,7 +766,7 @@ export function CopenhagenExperience({ onBackToCities }) {
             </div>
           )}
 
-          <CollectionPanel parts={pickupDebug.parts ?? FALLBACK_PARTS} />
+          <CollectionPanel parts={progressParts} />
 
           {!isRunning && !tutorialActive && (
             <button
