@@ -19,12 +19,16 @@ export function TownMap({ mapData, onClose }) {
       </div>
 
       <div className="town-map-diagram" aria-hidden="true">
-        <div className="town-map-left-street">
-          <span></span>
-        </div>
-        <div className="town-map-street">
-          <span></span>
-        </div>
+        <svg className="town-map-routes" viewBox="0 0 100 100" focusable="false">
+          <path className="town-map-road-edge town-map-road-edge-a" d="M58 8 C57 25 58 39 57 52 C56 68 57 80 58 92" />
+          <path className="town-map-road-edge town-map-road-edge-b" d="M75 8 C74 24 75 38 74 51 C73 67 74 80 75 92" />
+          <path className="town-map-road-center" d="M66 9 C66.8 24 65.6 37 66.3 49 C67 64 65.7 78 66.4 91" />
+          <path className="town-map-road-edge town-map-road-edge-a" d="M24 43 C36 42 48 43 58 45" />
+          <path className="town-map-road-edge town-map-road-edge-b" d="M24 54 C37 54 49 53 58 52" />
+          <path className="town-map-road-center" d="M25 48 C37 48.8 49 48 66 49" />
+        </svg>
+        <div className="town-map-street-label town-map-main-label">Main Street</div>
+        <div className="town-map-street-label town-map-left-label">Left Street</div>
         {TOWN_AREAS.map((area) => (
           <div
             key={area.id}
