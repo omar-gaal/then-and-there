@@ -38,6 +38,10 @@ const ARM_TURN_MIN_SAMPLE_SECONDS = 0.05
 const ARM_TURN_COOLDOWN_SECONDS = 0.8
 const ARM_TURN_SETTLE_THRESHOLD = 0.05
 const ARM_TURN_SETTLE_SECONDS = 0.2
+const TURN_AROUND_HOLD_SECONDS = 0.5
+const TURN_AROUND_COOLDOWN_SECONDS = 1.2
+const BUILDING_OCCLUSION_MODE = 'hide'
+const BUILDING_OCCLUSION_OPACITY = 0.08
 const PERFORMANCE_MODE = true
 const PERFORMANCE_STREET_DETAIL_Z = -68
 const VISUAL_ROAD_WIDTH = 5.6
@@ -46,6 +50,11 @@ const VISUAL_CURB_X = VISUAL_ROAD_WIDTH / 2 + 0.08
 const VISUAL_SIDEWALK_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH / 2
 const VISUAL_BUILDING_FACE_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH + 0.22
 const VISUAL_PROP_X = VISUAL_ROAD_WIDTH / 2 + 0.72
+const MAP_MAIN_START_Y = 0.88
+const MAP_MAIN_Z_TO_Y_SCALE = 55
+const MAP_LEFT_INTERSECTION_X = -5.2
+const MAP_LEFT_BRANCH_LENGTH = 38
+const MAP_LATERAL_TO_POSITION_SCALE = 42
 const HOUSE_BLOCKS = [
   { floors: 4, length: 2.35, shopKind: 'cafe', width: 1.35 },
   { floors: 5, length: 1.7, width: 1.05 },
@@ -58,16 +67,45 @@ const HOUSE_BLOCKS = [
   { floors: 3, length: 2.55, width: 1.42 },
   { floors: 5, length: 1.85, width: 1.08 },
 ]
-export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, tracking }) {
+export function ThreeStreetScene({
+  completionPhase = 'idle',
+  currentTutorialStep = 0,
+  onMapData,
+  onPickupDebug,
+  onWorldDebug,
+  resetRunKey = 0,
+  tracking,
+  tutorialActive = false,
+}) {
+  const completionPhaseRef = useRef(completionPhase)
   const mountRef = useRef(null)
+  const currentTutorialStepRef = useRef(currentTutorialStep)
+  const resetRunKeyRef = useRef(resetRunKey)
   const trackingRef = useRef(tracking)
+  const tutorialActiveRef = useRef(tutorialActive)
   const onMapDataRef = useRef(onMapData)
   const onPickupDebugRef = useRef(onPickupDebug)
   const onWorldDebugRef = useRef(onWorldDebug)
 
   useEffect(() => {
+    completionPhaseRef.current = completionPhase
+  }, [completionPhase])
+
+  useEffect(() => {
+    currentTutorialStepRef.current = currentTutorialStep
+  }, [currentTutorialStep])
+
+  useEffect(() => {
+    resetRunKeyRef.current = resetRunKey
+  }, [resetRunKey])
+
+  useEffect(() => {
     trackingRef.current = tracking
   }, [tracking])
+
+  useEffect(() => {
+    tutorialActiveRef.current = tutorialActive
+  }, [tutorialActive])
 
   useEffect(() => {
     onMapDataRef.current = onMapData
@@ -141,6 +179,9 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     world.add(bikeParts.group)
     scene.add(world)
     const avatar = createPoseAvatar()
+    const ghostGuide = createGhostGuide()
+    const completionDisplay = createCompletionDisplay()
+    scene.add(completionDisplay.group)
     const avatarMotion = {
       facingAngle: AVATAR_BASE_YAW,
       currentAreaId: 'mainStreet',
@@ -175,6 +216,13 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
       transitionLabel: '',
       transitionLabelUntil: 0,
       turnHint: '',
+      armsCrossed: false,
+      armsCrossedArmed: true,
+      armsCrossedSince: null,
+      lastTurnAroundTrigger: 'none',
+      lastTurnAroundTriggerUntil: 0,
+      turnAroundCooldownMs: 0,
+      turnAroundCooldownUntil: 0,
       keyboardActive: false,
       keyboardForward: 0,
       keyboardMovementValue: 0,
@@ -199,7 +247,24 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
       lastDebugAt: 0,
       nearbyPartId: null,
     }
+    const completionState = {
+      activeKey: '',
+      animationStartAt: 0,
+      lastResetKey: resetRunKeyRef.current,
+    }
+    const occlusionState = {
+      active: new Set(),
+      debug: {
+        cameraInsideBuilding: false,
+        fadedCount: 0,
+        fadedIds: [],
+        mode: BUILDING_OCCLUSION_MODE,
+      },
+      raycaster: new THREE.Raycaster(),
+      targets: [],
+    }
     scene.add(avatar)
+    scene.add(ghostGuide)
     const animated = addAmbientDetails(scene)
     const sceneStats = countSceneObjects(scene)
     const perfState = {
@@ -226,6 +291,7 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
       left: false,
       right: false,
       returnMain: false,
+      turnAround: false,
       turnLeft: false,
       turnRight: false,
     }
@@ -256,6 +322,12 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
       }
 
       const elapsed = (performance.now() - startedAt) / 1000
+      if (completionState.lastResetKey !== resetRunKeyRef.current) {
+        resetRunScene(bikeParts, completionDisplay, avatarMotion, pickupState, keys)
+        completionState.lastResetKey = resetRunKeyRef.current
+      }
+      const completionPhase = completionPhaseRef.current
+      const completionLocksGameplay = isCompletionLockingGameplay(completionPhase)
 
       const ambientStartedAt = performance.now()
       for (let index = 0; index < animated.clouds.length; index += 1) {
@@ -276,22 +348,48 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
       perfState.avgAmbientMs = smoothMetric(perfState.avgAmbientMs, performance.now() - ambientStartedAt)
 
       const avatarStartedAt = performance.now()
-      updateAvatar(avatar, avatarMotion, trackingRef.current, elapsed, keys)
+      if (completionLocksGameplay) {
+        stopAvatarMotion(avatarMotion, keys)
+      }
+      updateAvatar(avatar, avatarMotion, completionLocksGameplay ? null : trackingRef.current, elapsed, keys)
+      updateCompletionAvatarPose(avatar, completionPhase, elapsed)
       perfState.avgAvatarMs = smoothMetric(perfState.avgAvatarMs, performance.now() - avatarStartedAt)
       const headingStartedAt = performance.now()
-      updateHeadingAndArea(avatarMotion, bikeParts, pickupState, keys, trackingRef.current, elapsed)
+      if (!completionLocksGameplay) {
+        updateHeadingAndArea(avatarMotion, bikeParts, pickupState, keys, trackingRef.current, elapsed)
+      }
       perfState.avgHeadingMs = smoothMetric(perfState.avgHeadingMs, performance.now() - headingStartedAt)
       const worldStartedAt = performance.now()
       updateWorldScroll(world, avatarMotion)
-      updateCameraFollow(camera, avatar, avatarMotion)
+      if (completionLocksGameplay) {
+        updateCompletionCamera(camera, avatar, avatarMotion)
+      } else {
+        updateCameraFollow(camera, avatar, avatarMotion)
+      }
+      updateCameraOcclusionFading(scene, camera, avatar, occlusionState)
+      updateTutorialScene(
+        ghostGuide,
+        bikeParts,
+        avatarMotion,
+        tutorialActiveRef.current,
+        currentTutorialStepRef.current,
+        elapsed,
+      )
+      updateCompletionDisplay(completionDisplay, avatar, avatarMotion, completionPhase, completionState, elapsed)
       perfState.avgWorldMs = smoothMetric(perfState.avgWorldMs, performance.now() - worldStartedAt)
       const pickupStartedAt = performance.now()
-      updateBikeParts(bikeParts, avatarMotion, avatar, trackingRef.current, keys, pickupState, onPickupDebugRef.current, elapsed)
+      if (!completionLocksGameplay) {
+        updateBikeParts(bikeParts, avatarMotion, avatar, trackingRef.current, keys, pickupState, onPickupDebugRef.current, elapsed)
+      } else {
+        pickupState.nearbyPartId = null
+        pickupState.feedback = ''
+        publishPickupDebug(pickupState, onPickupDebugRef.current, false, null, bikeParts.parts, elapsed, true)
+      }
       updateBackpackGlow(avatar, elapsed)
       perfState.avgPickupMs = smoothMetric(perfState.avgPickupMs, performance.now() - pickupStartedAt)
       const mapDebugStartedAt = performance.now()
       publishMapData(avatarMotion, bikeParts.parts, onMapDataRef.current, elapsed)
-      publishWorldDebug(avatarMotion, onWorldDebugRef.current, elapsed, scene, renderer, perfState, trackingRef.current)
+      publishWorldDebug(avatarMotion, onWorldDebugRef.current, elapsed, scene, renderer, perfState, trackingRef.current, occlusionState)
       perfState.avgMapDebugMs = smoothMetric(perfState.avgMapDebugMs, performance.now() - mapDebugStartedAt)
       const renderStartedAt = performance.now()
       renderer.render(scene, camera)
@@ -834,6 +932,8 @@ function createBuilding({ depth, height, index, shopKind = '', side, width }) {
     group.add(box)
   }
 
+  markCameraOccluder(group, `building-${shopKind || 'row'}-${index}-${side}`)
+
   return group
 }
 
@@ -876,6 +976,42 @@ function createPoseAvatar() {
   return group
 }
 
+function createGhostGuide() {
+  const group = new THREE.Group()
+  const ghostMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    opacity: 0.52,
+    transparent: true,
+  })
+  const accentMaterial = new THREE.MeshBasicMaterial({
+    color: 0xd8fff7,
+    opacity: 0.62,
+    transparent: true,
+  })
+
+  group.userData.parts = {
+    head: new THREE.Mesh(new THREE.SphereGeometry(0.15, 18, 12), ghostMaterial),
+    torso: createAvatarLimb(0.08, ghostMaterial),
+    leftUpperArm: createAvatarLimb(0.032, accentMaterial),
+    leftLowerArm: createAvatarLimb(0.028, accentMaterial),
+    rightUpperArm: createAvatarLimb(0.032, accentMaterial),
+    rightLowerArm: createAvatarLimb(0.028, accentMaterial),
+    leftHand: new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 8), accentMaterial),
+    rightHand: new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 8), accentMaterial),
+    leftLeg: createAvatarLimb(0.035, ghostMaterial),
+    rightLeg: createAvatarLimb(0.035, ghostMaterial),
+  }
+
+  for (const part of Object.values(group.userData.parts)) {
+    group.add(part)
+  }
+
+  group.scale.setScalar(1.08)
+  group.visible = false
+
+  return group
+}
+
 function createBikeParts() {
   const group = new THREE.Group()
   const parts = BIKE_PARTS.map((definition) => {
@@ -892,10 +1028,59 @@ function createBikeParts() {
       collected: false,
       halo,
       mesh,
+      originalAreaId: definition.areaId ?? 'mainStreet',
+      originalX: definition.x,
+      originalZ: definition.z,
     }
   })
 
   return { group, parts, pickupAnimations: [] }
+}
+
+function createCompletionDisplay() {
+  const group = new THREE.Group()
+  const sparkleGroup = new THREE.Group()
+  const assemblyParts = [
+    createAssemblyPart('frame', createFramePart(), new THREE.Vector3(0, 0.78, 0)),
+    createAssemblyPart('rearWheel', createWheelPart(), new THREE.Vector3(-0.64, 0.36, 0)),
+    createAssemblyPart('frontWheel', createWheelPart(), new THREE.Vector3(0.68, 0.36, 0)),
+    createAssemblyPart('handlebar', createHandlebarPart(), new THREE.Vector3(0.9, 0.92, 0)),
+    createAssemblyPart('saddle', createSaddlePart(), new THREE.Vector3(-0.16, 0.98, 0)),
+  ]
+
+  for (const part of assemblyParts) {
+    part.mesh.visible = false
+    group.add(part.mesh)
+  }
+
+  for (let index = 0; index < 10; index += 1) {
+    const sparkle = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025 + (index % 3) * 0.008, 8, 6),
+      new THREE.MeshBasicMaterial({ color: index % 2 === 0 ? 0xffedb7 : 0xffffff }),
+    )
+
+    sparkle.userData.angle = index * 0.72
+    sparkle.userData.radius = 0.52 + (index % 4) * 0.12
+    sparkleGroup.add(sparkle)
+  }
+
+  group.add(sparkleGroup)
+  group.visible = false
+  group.scale.setScalar(1.28)
+
+  return {
+    assemblyParts,
+    group,
+    sparkleGroup,
+  }
+}
+
+function createAssemblyPart(id, mesh, target) {
+  return {
+    id,
+    mesh,
+    target,
+  }
 }
 
 function createBikePart(kind) {
@@ -1191,6 +1376,161 @@ function addAvatarOutlined(parent, mesh, thickness) {
   parent.add(mesh)
 }
 
+function markCameraOccluder(object, id) {
+  object.userData.isBuildingOccluder = true
+  object.userData.fadeWhenBlockingCamera = true
+  object.userData.cameraOccluderRoot = object
+  object.userData.cameraOccluderId = id
+  object.traverse?.((child) => {
+    if (child.isMesh) {
+      child.userData.fadeWhenBlockingCamera = true
+      child.userData.cameraOccluderRoot = object
+      child.userData.cameraOccluderId = id
+      storeOriginalMaterialSettings(child)
+    }
+  })
+}
+
+function storeOriginalMaterialSettings(mesh) {
+  if (mesh.userData.cameraOcclusionOriginalVisible === undefined) {
+    mesh.userData.cameraOcclusionOriginalVisible = mesh.visible
+  }
+
+  for (const meshMaterial of getMeshMaterials(mesh)) {
+    if (!meshMaterial.userData.cameraOcclusionOriginal) {
+      meshMaterial.userData.cameraOcclusionOriginal = {
+        depthWrite: meshMaterial.depthWrite,
+        opacity: meshMaterial.opacity,
+        transparent: meshMaterial.transparent,
+      }
+    }
+  }
+}
+
+function updateCameraOcclusionFading(scene, camera, avatar, occlusionState) {
+  const cameraPosition = camera.getWorldPosition(new THREE.Vector3())
+  const avatarTarget = avatar.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.95, 0))
+  const viewVector = avatarTarget.clone().sub(cameraPosition)
+  const viewDistance = viewVector.length()
+  const roots = new Set()
+
+  scene.traverse((child) => {
+    if (child.userData.isBuildingOccluder) {
+      roots.add(child)
+    }
+  })
+
+  const blockingRoots = new Set()
+  let cameraInsideBuilding = false
+
+  for (const root of roots) {
+    const blockState = getBuildingOcclusionState(root, cameraPosition, viewVector, viewDistance)
+
+    if (blockState.blocksView) {
+      blockingRoots.add(root)
+    }
+    cameraInsideBuilding = cameraInsideBuilding || blockState.cameraInside
+  }
+
+  for (const root of blockingRoots) {
+    applyBuildingOcclusion(root, true)
+  }
+  occlusionState.active = restoreInactiveOccluders(occlusionState, blockingRoots)
+  updateOcclusionDebug(occlusionState, cameraInsideBuilding)
+}
+
+function getBuildingOcclusionState(root, cameraPosition, viewVector, viewDistance) {
+  const box = new THREE.Box3().setFromObject(root).expandByScalar(0.12)
+
+  if (box.isEmpty() || viewDistance <= 0.01) {
+    return {
+      blocksView: false,
+      cameraInside: false,
+    }
+  }
+
+  const cameraInside = box.containsPoint(cameraPosition)
+  if (cameraInside) {
+    return {
+      blocksView: true,
+      cameraInside: true,
+    }
+  }
+
+  const direction = viewVector.clone().normalize()
+  const ray = new THREE.Ray(cameraPosition, direction)
+  const hit = ray.intersectBox(box, new THREE.Vector3())
+
+  if (!hit) {
+    return {
+      blocksView: false,
+      cameraInside: false,
+    }
+  }
+
+  return {
+    blocksView: hit.distanceTo(cameraPosition) <= viewDistance,
+    cameraInside: false,
+  }
+}
+
+function restoreInactiveOccluders(occlusionState, blockingRoots) {
+  const nextActive = new Set(blockingRoots)
+
+  for (const root of occlusionState.active) {
+    if (!blockingRoots.has(root)) {
+      applyBuildingOcclusion(root, false)
+    }
+  }
+
+  return nextActive
+}
+
+function applyBuildingOcclusion(root, shouldOcclude) {
+  root.traverse((child) => {
+    if (!child.isMesh || !child.userData.fadeWhenBlockingCamera) {
+      return
+    }
+
+    child.visible = shouldOcclude && BUILDING_OCCLUSION_MODE === 'hide'
+      ? false
+      : child.userData.cameraOcclusionOriginalVisible
+
+    for (const meshMaterial of getMeshMaterials(child)) {
+      const original = meshMaterial.userData.cameraOcclusionOriginal
+
+      if (!original) {
+        continue
+      }
+
+      if (shouldOcclude) {
+        meshMaterial.transparent = true
+        meshMaterial.opacity = BUILDING_OCCLUSION_OPACITY
+        meshMaterial.depthWrite = false
+      } else {
+        meshMaterial.opacity = original.opacity
+        meshMaterial.transparent = original.transparent
+        meshMaterial.depthWrite = original.depthWrite
+      }
+    }
+  })
+}
+
+function updateOcclusionDebug(occlusionState, cameraInsideBuilding) {
+  const fadedRoots = [...occlusionState.active]
+
+  occlusionState.debug = {
+    cameraInsideBuilding,
+    fadedCount: fadedRoots.length,
+    fadedIds: fadedRoots.map((root) => root.userData.cameraOccluderId ?? root.uuid).slice(0, 8),
+    mode: BUILDING_OCCLUSION_MODE,
+  }
+}
+
+function getMeshMaterials(mesh) {
+  return Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+}
+
 function updateAvatar(avatar, motionState, tracking, elapsed, keys) {
   const pose = tracking?.pose
   const motion = tracking?.motion ?? { lateral: 0, speed: 0, walking: false }
@@ -1310,6 +1650,262 @@ function updateCameraFollow(camera, avatar, motionState) {
   camera.lookAt(target)
 }
 
+function isCompletionLockingGameplay(completionPhase) {
+  return completionPhase === 'postcard'
+}
+
+function stopAvatarMotion(motionState, keys) {
+  keys.forward = false
+  keys.left = false
+  keys.right = false
+  keys.bend = false
+  keys.turnLeft = false
+  keys.turnRight = false
+  keys.turnAround = false
+  motionState.poseVx = 0
+  motionState.poseVz = 0
+  motionState.keyboardVx = 0
+  motionState.keyboardVz = 0
+  motionState.vx = 0
+  motionState.vz = 0
+  motionState.smoothedSpeed *= 0.82
+  motionState.scrolling = false
+}
+
+function updateCompletionCamera(camera, avatar, motionState) {
+  const forward = forwardVectorFromHeading(motionState.currentHeading)
+  const right = rightVectorFromHeading(motionState.currentHeading)
+  const target = avatar.position.clone()
+    .add(new THREE.Vector3(0, 1.05, 0))
+    .add(forward.clone().multiplyScalar(1.8))
+    .add(right.clone().multiplyScalar(0.75))
+  const desiredPosition = avatar.position.clone()
+    .add(forward.clone().multiplyScalar(-5.9))
+    .add(right.clone().multiplyScalar(1.35))
+    .add(new THREE.Vector3(0, 1.72, 0))
+
+  camera.position.lerp(desiredPosition, 0.035)
+  camera.lookAt(target)
+}
+
+function updateCompletionDisplay(display, avatar, motionState, completionPhase, completionState, elapsed) {
+  void avatar
+  void motionState
+  void elapsed
+  display.group.visible = false
+  completionState.activeKey = completionPhase === 'idle' ? '' : completionPhase
+}
+
+function resetCompletionAssembly(display) {
+  for (const part of display.assemblyParts) {
+    part.mesh.visible = false
+    part.mesh.scale.setScalar(0.25)
+  }
+}
+
+function updateCompletionAvatarPose(avatar, completionPhase, elapsed) {
+  if (completionPhase !== 'celebrating' && completionPhase !== 'postcard') {
+    return
+  }
+
+  const parts = avatar.userData.parts
+  const wave = Math.sin(elapsed * 5.5) * 0.08
+  const leftShoulder = new THREE.Vector3(-0.24, 1.22, 0)
+  const rightShoulder = new THREE.Vector3(0.24, 1.22, 0)
+  const leftElbow = new THREE.Vector3(-0.36, 1.5, wave)
+  const rightElbow = new THREE.Vector3(0.36, 1.5, -wave)
+  const leftHand = new THREE.Vector3(-0.3, 1.74, wave)
+  const rightHand = new THREE.Vector3(0.3, 1.74, -wave)
+
+  setLimb(parts.leftUpperArm, leftShoulder, leftElbow, 0.32)
+  setLimb(parts.leftLowerArm, leftElbow, leftHand, 0.32)
+  setLimb(parts.rightUpperArm, rightShoulder, rightElbow, 0.32)
+  setLimb(parts.rightLowerArm, rightElbow, rightHand, 0.32)
+  parts.leftHand.position.lerp(leftHand, 0.32)
+  parts.rightHand.position.lerp(rightHand, 0.32)
+}
+
+function resetRunScene(bikeParts, completionDisplay, motionState, pickupState, keys) {
+  for (const part of bikeParts.parts) {
+    part.collected = false
+    part.collecting = false
+    part.areaId = part.originalAreaId
+    part.x = part.originalX
+    part.z = part.originalZ
+    part.mesh.position.set(part.originalX, 0.24, part.originalZ)
+    part.mesh.scale.setScalar(1)
+    part.mesh.visible = true
+    part.halo.position.set(part.originalX, 0.08, part.originalZ)
+    part.halo.visible = false
+  }
+
+  bikeParts.pickupAnimations.length = 0
+  completionDisplay.group.visible = false
+  resetCompletionAssembly(completionDisplay)
+  motionState.currentAreaId = 'mainStreet'
+  motionState.currentHeading = MAIN_STREET_HEADING
+  motionState.targetHeading = MAIN_STREET_HEADING
+  motionState.facingAngle = AVATAR_BASE_YAW
+  motionState.playerWorldX = 0
+  motionState.playerWorldZ = 0
+  motionState.worldTravel = 0
+  motionState.lateralOffset = 0
+  motionState.x = 0
+  motionState.z = 3.15
+  stopAvatarMotion(motionState, keys)
+  pickupState.feedback = ''
+  pickupState.feedbackUntil = 0
+  pickupState.gestureState = 'waiting'
+  pickupState.nearbyPartId = null
+}
+
+function updateTutorialScene(ghostGuide, bikeParts, motionState, tutorialActive, currentTutorialStep, elapsed) {
+  updateGhostGuide(ghostGuide, motionState, tutorialActive, currentTutorialStep, elapsed)
+  updateTutorialPartPlacement(bikeParts, motionState, tutorialActive, currentTutorialStep)
+}
+
+function updateGhostGuide(ghostGuide, motionState, tutorialActive, currentTutorialStep, elapsed) {
+  if (!ghostGuide) {
+    return
+  }
+
+  ghostGuide.visible = tutorialActive
+  if (!tutorialActive) {
+    return
+  }
+
+  const right = rightVectorFromHeading(motionState.currentHeading)
+  const forward = forwardVectorFromHeading(motionState.currentHeading)
+  const avatarPosition = new THREE.Vector3(
+    right.x * motionState.lateralOffset,
+    0.12,
+    motionState.z + right.z * motionState.lateralOffset,
+  )
+  const guideOffset = right.clone().multiplyScalar(-1.12).add(forward.clone().multiplyScalar(0.35))
+
+  ghostGuide.position.copy(avatarPosition).add(guideOffset)
+  ghostGuide.rotation.y = avatarYawFromHeading(motionState.currentHeading) + 0.12
+  ghostGuide.position.y += Math.sin(elapsed * 2.5) * 0.035
+  setGhostGuidePose(ghostGuide, currentTutorialStep, elapsed)
+}
+
+function setGhostGuidePose(ghostGuide, currentTutorialStep, elapsed) {
+  const parts = ghostGuide.userData.parts
+  const sway = Math.sin(elapsed * 3.2) * 0.035
+  const sideSway = currentTutorialStep === 0 ? Math.sin(elapsed * 2.3) * 0.34 : 0
+  const walk = currentTutorialStep === 1 ? Math.sin(elapsed * 8) * 0.18 : 0
+  const bend = currentTutorialStep === 6 ? 0.28 : 0
+  const leftArm = getGhostArmPose('left', currentTutorialStep, elapsed)
+  const rightArm = getGhostArmPose('right', currentTutorialStep, elapsed)
+
+  parts.head.position.lerp(new THREE.Vector3(sideSway * 0.2, 1.46 - bend, 0.02 + bend * 0.25), 0.18)
+  setLimb(
+    parts.torso,
+    new THREE.Vector3(sideSway * 0.16, 1.2 - bend * 0.78, bend * 0.12),
+    new THREE.Vector3(0, 0.78 - bend * 0.24, 0),
+    0.22,
+  )
+  setLimb(parts.leftUpperArm, leftArm.shoulder, leftArm.elbow, 0.24)
+  setLimb(parts.leftLowerArm, leftArm.elbow, leftArm.hand, 0.24)
+  setLimb(parts.rightUpperArm, rightArm.shoulder, rightArm.elbow, 0.24)
+  setLimb(parts.rightLowerArm, rightArm.elbow, rightArm.hand, 0.24)
+  setLimb(parts.leftLeg, new THREE.Vector3(-0.12, 0.78, 0), new THREE.Vector3(-0.18 + sideSway * 0.18, 0.08 + Math.max(0, walk) * 0.45, walk), 0.2)
+  setLimb(parts.rightLeg, new THREE.Vector3(0.12, 0.78, 0), new THREE.Vector3(0.18 + sideSway * 0.18, 0.08 + Math.max(0, -walk) * 0.45, -walk), 0.2)
+  parts.leftHand.position.lerp(leftArm.hand, 0.24)
+  parts.rightHand.position.lerp(rightArm.hand, 0.24)
+  parts.head.position.y += sway
+}
+
+function getGhostArmPose(sideName, currentTutorialStep, elapsed) {
+  const side = sideName === 'left' ? -1 : 1
+  const shoulder = new THREE.Vector3(side * 0.2, 1.18, 0)
+
+  if (currentTutorialStep === 3) {
+    return {
+      shoulder,
+      elbow: new THREE.Vector3(side * 0.28, 1.52, 0),
+      hand: new THREE.Vector3(side * 0.22, 1.76, 0),
+    }
+  }
+
+  if (currentTutorialStep === 4) {
+    const demoLeft = Math.sin(elapsed * 1.8) < 0
+    const armOut = (demoLeft && side < 0) || (!demoLeft && side > 0)
+
+    if (armOut) {
+      return {
+        shoulder,
+        elbow: new THREE.Vector3(side * 0.48, 1.08, 0),
+        hand: new THREE.Vector3(side * (0.72 + Math.abs(Math.sin(elapsed * 5)) * 0.18), 1.04, 0),
+      }
+    }
+  }
+
+  if (currentTutorialStep === 5) {
+    return {
+      shoulder,
+      elbow: new THREE.Vector3(side * 0.1, 1.03, 0.1),
+      hand: new THREE.Vector3(-side * 0.28, 0.98, 0.16),
+    }
+  }
+
+  if (currentTutorialStep === 6) {
+    return {
+      shoulder: new THREE.Vector3(side * 0.2, 0.98, 0.08),
+      elbow: new THREE.Vector3(side * 0.3, 0.48, 0.16),
+      hand: new THREE.Vector3(side * 0.22, 0.18, 0.24),
+    }
+  }
+
+  if (currentTutorialStep === 1) {
+    const armSwing = Math.sin(elapsed * 8 + (side < 0 ? 0 : Math.PI)) * 0.16
+
+    return {
+      shoulder,
+      elbow: new THREE.Vector3(side * 0.3, 0.88, armSwing),
+      hand: new THREE.Vector3(side * 0.26, 0.62, armSwing * 1.2),
+    }
+  }
+
+  return {
+    shoulder,
+    elbow: new THREE.Vector3(side * 0.3, 0.88, 0),
+    hand: new THREE.Vector3(side * 0.26, 0.56, 0),
+  }
+}
+
+function updateTutorialPartPlacement(bikeParts, motionState, tutorialActive, currentTutorialStep) {
+  const tutorialPart = bikeParts.parts[0]
+
+  if (!tutorialPart || tutorialPart.collected) {
+    return
+  }
+
+  if (!tutorialActive || currentTutorialStep !== 6) {
+    restoreTutorialPart(tutorialPart)
+    return
+  }
+
+  const worldOffsetX = -motionState.playerWorldX
+  const worldOffsetZ = (-motionState.playerWorldZ) % STREET_REPEAT
+  const targetX = motionState.x - worldOffsetX
+  const targetZ = motionState.z - 0.8 - worldOffsetZ
+
+  tutorialPart.areaId = motionState.currentAreaId
+  tutorialPart.x = targetX
+  tutorialPart.z = targetZ
+  tutorialPart.mesh.position.set(targetX, 0.24, targetZ)
+  tutorialPart.halo.position.set(targetX, 0.08, targetZ)
+}
+
+function restoreTutorialPart(part) {
+  part.areaId = part.originalAreaId
+  part.x = part.originalX
+  part.z = part.originalZ
+  part.mesh.position.set(part.originalX, 0.24, part.originalZ)
+  part.halo.position.set(part.originalX, 0.08, part.originalZ)
+}
+
 function avatarYawFromHeading(heading) {
   return AVATAR_BASE_YAW - heading
 }
@@ -1326,6 +1922,7 @@ function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, trackin
   const canTransition = elapsed - motionState.lastTransitionAt > 1
   const atJunction = isNearLeftStreetJunction(motionState)
   const armTurn = updateArmTurnGestureState(motionState, tracking?.pose, elapsed)
+  const turnAroundGesture = updateTurnAroundGestureState(motionState, tracking?.pose, elapsed)
   const gestureTurnRequested = armTurn.left || armTurn.right
   let gestureTurnApplied = false
 
@@ -1334,6 +1931,13 @@ function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, trackin
     : atJunction && motionState.targetHeading === MAIN_STREET_HEADING
       ? 'Press Q to look left'
       : ''
+
+  if (keys.turnAround) {
+    turnPlayerAround(motionState, elapsed, 'keyboard')
+    keys.turnAround = false
+  } else if (turnAroundGesture.triggered) {
+    turnPlayerAround(motionState, elapsed, 'gesture')
+  }
 
   if (motionState.currentAreaId === 'leftStreet' && keys.returnMain) {
     motionState.currentAreaId = 'mainStreet'
@@ -1402,6 +2006,81 @@ function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, trackin
   }
 
   bikeParts.group.visible = true
+}
+
+function turnPlayerAround(motionState, elapsed, trigger) {
+  const nextHeading = normalizeAngle(motionState.targetHeading + Math.PI)
+
+  motionState.targetHeading = nextHeading
+  motionState.turnAroundCooldownUntil = elapsed + TURN_AROUND_COOLDOWN_SECONDS
+  motionState.turnAroundCooldownMs = TURN_AROUND_COOLDOWN_SECONDS * 1000
+  motionState.lastTurnAroundTrigger = trigger
+  motionState.lastTurnAroundTriggerUntil = elapsed + 1.4
+}
+
+function updateTurnAroundGestureState(motionState, pose, elapsed) {
+  const armsCrossed = getArmsCrossedForTurnAround(pose)
+  const cooldownRemaining = Math.max(0, motionState.turnAroundCooldownUntil - elapsed)
+  const result = { triggered: false }
+
+  motionState.armsCrossed = armsCrossed
+  motionState.turnAroundCooldownMs = cooldownRemaining * 1000
+  if (motionState.lastTurnAroundTriggerUntil <= elapsed) {
+    motionState.lastTurnAroundTrigger = 'none'
+  }
+
+  if (!armsCrossed) {
+    motionState.armsCrossedSince = null
+    motionState.armsCrossedArmed = true
+    return result
+  }
+
+  if (!motionState.armsCrossedSince) {
+    motionState.armsCrossedSince = elapsed
+  }
+
+  if (
+    motionState.armsCrossedArmed &&
+    cooldownRemaining <= 0 &&
+    elapsed - motionState.armsCrossedSince >= TURN_AROUND_HOLD_SECONDS
+  ) {
+    motionState.armsCrossedArmed = false
+    result.triggered = true
+  }
+
+  return result
+}
+
+function getArmsCrossedForTurnAround(pose) {
+  const leftWrist = pose?.leftWrist
+  const rightWrist = pose?.rightWrist
+  const leftShoulder = pose?.leftShoulder
+  const rightShoulder = pose?.rightShoulder
+
+  if (
+    !isUsableWrist(leftWrist) ||
+    !isUsableWrist(rightWrist) ||
+    !isUsableWrist(leftShoulder) ||
+    !isUsableWrist(rightShoulder)
+  ) {
+    return false
+  }
+
+  const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2
+  const shoulderY = (leftShoulder.y + rightShoulder.y) / 2
+  const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x)
+  const minCross = Math.max(0.025, shoulderWidth * 0.1)
+  const chestTop = shoulderY - 0.12
+  const chestBottom = shoulderY + 0.24
+  const leftWristCrossed = leftWrist.x > shoulderCenterX + minCross
+  const rightWristCrossed = rightWrist.x < shoulderCenterX - minCross
+  const wristsAtChestHeight =
+    leftWrist.y >= chestTop &&
+    leftWrist.y <= chestBottom &&
+    rightWrist.y >= chestTop &&
+    rightWrist.y <= chestBottom
+
+  return leftWristCrossed && rightWristCrossed && wristsAtChestHeight
 }
 
 function updateArmTurnGestureState(motionState, pose, elapsed) {
@@ -1604,13 +2283,14 @@ function isNearLeftStreetJunction(motionState) {
   return Math.abs(motionState.playerWorldZ - LEFT_STREET_ENTRANCE_Z) < 5 && motionState.playerWorldX > -5.8
 }
 
-function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, perfState, tracking) {
+function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, perfState, tracking, occlusionState) {
   if (!onWorldDebug || elapsed - motionState.lastDebugAt < 0.12) {
     return
   }
 
   motionState.lastDebugAt = elapsed
   const currentSceneStats = countSceneObjects(scene)
+  const mapPlayer = getWorldMapPlayerPosition(motionState)
 
   perfState.meshCount = currentSceneStats.meshCount
   perfState.totalObjects = currentSceneStats.totalObjects
@@ -1627,17 +2307,29 @@ function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, 
     armTurnTriggerAccepted: motionState.armTurnTriggerAccepted ?? false,
     armTurnTriggerAttempted: motionState.armTurnTriggerAttempted ?? false,
     armTurnTriggered: motionState.armTurnTriggered ?? '',
+    armsCrossed: motionState.armsCrossed ?? false,
+    lastTurnAroundTrigger: motionState.lastTurnAroundTrigger ?? 'none',
+    turnAroundCooldownMs: motionState.turnAroundCooldownMs ?? 0,
     keyboardActive: motionState.keyboardActive,
     keyboardForward: motionState.keyboardForward,
     keyboardMovementValue: motionState.keyboardMovementValue,
     keyboardSide: motionState.keyboardSide,
     keyboardSpeedMultiplier: KEYBOARD_SPEED_MULTIPLIER,
     keyboardSmoothing: KEYBOARD_MOVEMENT_SMOOTHING,
+    lateralOffset: motionState.lateralOffset,
     leftWristAvatarX: motionState.leftWristAvatarX ?? 0,
     leftArmOut: motionState.leftArmOut ?? false,
     leftWristDeltaX: motionState.leftWristDeltaX ?? 0,
     rawLeftWristX: motionState.rawLeftWristX ?? 0.5,
     movementSmoothing: MEDIAPIPE_MOVEMENT_SMOOTHING,
+    localForward: mapPlayer.localForward,
+    localLateral: mapPlayer.localLateral,
+    mapPlayerX: mapPlayer.x,
+    mapPlayerY: mapPlayer.y,
+    occlusionCameraInsideBuilding: occlusionState?.debug?.cameraInsideBuilding ?? false,
+    occlusionFadedCount: occlusionState?.debug?.fadedCount ?? 0,
+    occlusionFadedIds: occlusionState?.debug?.fadedIds ?? [],
+    occlusionMode: occlusionState?.debug?.mode ?? BUILDING_OCCLUSION_MODE,
     poseDebugMode: POSE_DEBUG_MODE,
     poseMode: POSE_MODE,
     poseMirrorX: POSE_MIRROR_X,
@@ -1654,6 +2346,8 @@ function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, 
     yawInfluence: AVATAR_YAW_INFLUENCE,
     scrolling: motionState.scrolling,
     smoothedSpeed: motionState.smoothedSpeed,
+    playerWorldX: motionState.playerWorldX,
+    playerWorldZ: motionState.playerWorldZ,
     worldZ: motionState.worldTravel,
     perf: {
       avgAmbientMs: perfState.avgAmbientMs,
@@ -1730,40 +2424,87 @@ function publishMapData(motionState, parts, onMapData, elapsed) {
 }
 
 function getMapPlayerPosition(motionState) {
-  if (motionState.currentAreaId === 'leftStreet') {
-    const leftProgress = THREE.MathUtils.clamp((Math.abs(motionState.playerWorldX) - 5.2) / 38, 0, 1)
+  const mapPosition = getWorldMapPlayerPosition(motionState)
+
+  return {
+    progress: mapPosition.y,
+    side: getStreetSideLabel(mapPosition.localLateral),
+    sidePosition: mapPosition.x,
+    x: mapPosition.x,
+    y: mapPosition.y,
+  }
+}
+
+function getWorldMapPlayerPosition(motionState) {
+  return worldToMapPlayerPosition(
+    motionState.playerWorldX,
+    motionState.playerWorldZ,
+    motionState.currentAreaId,
+    motionState.currentHeading,
+    motionState.lateralOffset,
+  )
+}
+
+function worldToMapPlayerPosition(playerWorldX, playerWorldZ, currentAreaId, currentHeading, lateralOffset) {
+  const streetHeading = getMapStreetHeading(currentAreaId, currentHeading)
+  const streetForward = forwardVectorFromHeading(streetHeading)
+  const streetRight = rightVectorFromHeading(streetHeading)
+  const playerRight = rightVectorFromHeading(currentHeading)
+  const playerPosition = new THREE.Vector3(playerWorldX, 0, playerWorldZ)
+    .add(playerRight.multiplyScalar(lateralOffset))
+  const streetOrigin = currentAreaId === 'leftStreet'
+    ? new THREE.Vector3(MAP_LEFT_INTERSECTION_X, 0, LEFT_STREET_ENTRANCE_Z)
+    : new THREE.Vector3(0, 0, 0)
+  const streetDelta = playerPosition.clone().sub(streetOrigin)
+  const localForward = streetDelta.dot(streetForward)
+  const localLateral = streetDelta.dot(streetRight)
+
+  if (currentAreaId === 'leftStreet') {
+    const leftProgress = THREE.MathUtils.clamp(localForward / MAP_LEFT_BRANCH_LENGTH, 0, 1)
 
     return {
-      progress: THREE.MathUtils.clamp(
-        MAP_LEFT_STREET.centerY + motionState.x / 42,
-        MAP_LEFT_STREET.centerY - MAP_LEFT_STREET.halfWidth * 0.72,
-        MAP_LEFT_STREET.centerY + MAP_LEFT_STREET.halfWidth * 0.72,
-      ),
-      side: getStreetSideLabel(motionState.x),
-      sidePosition: THREE.MathUtils.clamp(
+      localForward,
+      localLateral,
+      x: THREE.MathUtils.clamp(
         MAP_LEFT_STREET.endX - leftProgress * (MAP_LEFT_STREET.endX - MAP_LEFT_STREET.startX),
         MAP_LEFT_STREET.startX,
         MAP_LEFT_STREET.endX,
+      ),
+      y: THREE.MathUtils.clamp(
+        MAP_LEFT_STREET.centerY - localLateral / MAP_LATERAL_TO_POSITION_SCALE,
+        MAP_LEFT_STREET.centerY - MAP_LEFT_STREET.halfWidth * 0.72,
+        MAP_LEFT_STREET.centerY + MAP_LEFT_STREET.halfWidth * 0.72,
       ),
     }
   }
 
   return {
-    progress: normalizeStreetProgress(motionState.worldTravel),
-    side: getStreetSideLabel(motionState.x),
-    sidePosition: projectMainStreetPlayerSide(motionState.x),
+    localForward,
+    localLateral,
+    x: projectMainStreetPlayerSide(localLateral),
+    y: THREE.MathUtils.clamp(
+      MAP_MAIN_START_Y - localForward / MAP_MAIN_Z_TO_Y_SCALE,
+      0.08,
+      0.92,
+    ),
   }
 }
 
-function normalizeStreetProgress(worldTravel) {
-  const progress = (worldTravel % STREET_REPEAT) / STREET_REPEAT
+function getMapStreetHeading(currentAreaId, currentHeading) {
+  if (currentAreaId === 'leftStreet') {
+    return LEFT_STREET_HEADING
+  }
 
-  return THREE.MathUtils.clamp(progress, 0, 1)
+  if (currentAreaId === 'mainStreet') {
+    return MAIN_STREET_HEADING
+  }
+
+  return currentHeading
 }
 
 function projectMainStreetPlayerSide(x) {
   return THREE.MathUtils.clamp(
-    MAP_MAIN_STREET.centerX + x / 42,
+    MAP_MAIN_STREET.centerX + x / MAP_LATERAL_TO_POSITION_SCALE,
     MAP_MAIN_STREET.centerX - MAP_MAIN_STREET.halfWidth * 0.72,
     MAP_MAIN_STREET.centerX + MAP_MAIN_STREET.halfWidth * 0.72,
   )
@@ -1783,6 +2524,10 @@ function getStreetSideLabel(x) {
 
 function angleDelta(current, target) {
   return Math.atan2(Math.sin(target - current), Math.cos(target - current))
+}
+
+function normalizeAngle(angle) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle))
 }
 
 function applyWalkCycle(points, motionState) {
@@ -1834,6 +2579,7 @@ function updateBikeParts(bikeParts, avatarMotion, avatar, tracking, keys, pickup
   const handsLow = poseHandsLow || keyboardBend
   const nearbyPart = findNearbyPart(bikeParts.parts, avatarMotion)
 
+  pickupState.debug = avatarMotion.pickupDebug
   updatePickupAnimations(bikeParts, avatar, elapsed)
 
   for (const part of bikeParts.parts) {
@@ -1879,12 +2625,14 @@ function updateBikeParts(bikeParts, avatarMotion, avatar, tracking, keys, pickup
 
   if (keyboardBend && (pickupState.gestureState === 'waiting' || pickupState.gestureState === 'hands down')) {
     collectNearbyPart(nearbyPart, bikeParts, avatar, pickupState, elapsed)
-    publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, bikeParts.parts, elapsed)
+    publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, bikeParts.parts, elapsed, true)
     return
   }
 
   if (pickupState.gestureState === 'hands down' && !handsLow) {
     collectNearbyPart(nearbyPart, bikeParts, avatar, pickupState, elapsed)
+    publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, bikeParts.parts, elapsed, true)
+    return
   }
 
   publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, bikeParts.parts, elapsed)
@@ -2144,17 +2892,27 @@ function findNearbyPart(parts, avatarMotion) {
   let nearestDistance = Infinity
   const worldOffsetX = -avatarMotion.playerWorldX
   const worldOffsetZ = (-avatarMotion.playerWorldZ) % STREET_REPEAT
+  const avatarScenePosition = getAvatarScenePickupPosition(avatarMotion)
+  let handlebarDebug = null
 
   for (const part of parts) {
+    const visibleZ = part.z + worldOffsetZ
+    const visibleX = part.x + worldOffsetX
+    const dx = visibleX - avatarScenePosition.x
+    const dz = visibleZ - avatarScenePosition.z
+    const distance = Math.hypot(dx * 0.9, dz)
+
+    if (part.id === 'handlebar') {
+      handlebarDebug = {
+        distance,
+        sceneX: visibleX,
+        sceneZ: visibleZ,
+      }
+    }
+
     if (part.collected || (part.areaId ?? 'mainStreet') !== avatarMotion.currentAreaId) {
       continue
     }
-
-    const visibleZ = part.z + worldOffsetZ
-    const visibleX = part.x + worldOffsetX
-    const dx = visibleX - avatarMotion.x
-    const dz = visibleZ - avatarMotion.z
-    const distance = Math.hypot(dx * 0.9, dz)
 
     if (Math.abs(dx) < 1.45 && Math.abs(dz) < 2.2 && distance < nearestDistance) {
       nearest = part
@@ -2162,7 +2920,27 @@ function findNearbyPart(parts, avatarMotion) {
     }
   }
 
+  avatarMotion.pickupDebug = {
+    avatarSceneX: avatarScenePosition.x,
+    avatarSceneZ: avatarScenePosition.z,
+    currentAreaId: avatarMotion.currentAreaId,
+    handlebarDistance: handlebarDebug?.distance ?? null,
+    handlebarSceneX: handlebarDebug?.sceneX ?? null,
+    handlebarSceneZ: handlebarDebug?.sceneZ ?? null,
+    nearbyPartId: nearest?.id ?? 'none',
+    pickupDistance: Number.isFinite(nearestDistance) ? nearestDistance : null,
+  }
+
   return nearest
+}
+
+function getAvatarScenePickupPosition(avatarMotion) {
+  const right = rightVectorFromHeading(avatarMotion.currentHeading)
+
+  return {
+    x: right.x * avatarMotion.lateralOffset,
+    z: avatarMotion.z + right.z * avatarMotion.lateralOffset,
+  }
 }
 
 function getHandsLow(pose) {
@@ -2184,8 +2962,8 @@ function getHandsLow(pose) {
   return leftWrist.y > lowThreshold && rightWrist.y > lowThreshold
 }
 
-function publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, parts, elapsed) {
-  if (!onPickupDebug || elapsed - pickupState.lastDebugAt < 0.1) {
+function publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, parts, elapsed, force = false) {
+  if (!onPickupDebug || (!force && elapsed - pickupState.lastDebugAt < 0.1)) {
     return
   }
 
@@ -2197,16 +2975,23 @@ function publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, pa
     }
   }
 
+  const collectedCount = parts.filter((part) => part.collected).length
+  const totalParts = parts.length
+
   onPickupDebug({
+    collectedCount,
+    debug: pickupState.debug ?? null,
     feedback: pickupState.feedback,
     gestureState: pickupState.gestureState,
     handsLow,
+    isComplete: totalParts > 0 && collectedCount === totalParts,
     nearbyPart: nearbyPart && !nearbyPart.collected ? nearbyPart.label : 'none',
     parts: parts.map((part) => ({
       collected: part.collected,
       id: part.id,
       label: part.label,
     })),
+    totalParts,
   })
 }
 
@@ -2453,7 +3238,7 @@ function setKeyState(code, keys, value) {
   }
 
   if (code === 'KeyR') {
-    keys.returnMain = value
+    keys.turnAround = value
     return true
   }
 
