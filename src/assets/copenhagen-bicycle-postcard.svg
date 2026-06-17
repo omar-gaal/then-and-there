@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" role="img" aria-labelledby="title desc">
+  <title id="title">Line illustration of a completed bicycle</title>
+  <desc id="desc">A simple black line drawing of a bicycle for the Copenhagen completion postcard.</desc>
+  <rect width="720" height="480" fill="#fff8eb"/>
+  <g fill="none" stroke="#111" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M102 378h516" stroke-width="5"/>
+    <circle cx="212" cy="284" r="82" stroke-width="7"/>
+    <circle cx="512" cy="284" r="82" stroke-width="7"/>
+    <circle cx="212" cy="284" r="16" stroke-width="6"/>
+    <circle cx="512" cy="284" r="13" stroke-width="6"/>
+    <circle cx="354" cy="286" r="23" stroke-width="6"/>
+    <path d="M212 284 304 166l50 120H212z" stroke-width="6"/>
+    <path d="M304 166h151l-101 120" stroke-width="6"/>
+    <path d="M354 286 455 166l57 118" stroke-width="6"/>
+    <path d="M304 166 286 118" stroke-width="6"/>
+    <path d="M278 118c-26 2-48-6-58-20 5-9 22-7 41-2 18 5 39 5 56 0 18-5 32-4 35 4-10 13-33 18-74 18z" stroke-width="6"/>
+    <path d="M455 166c-6-23-12-42-20-56" stroke-width="6"/>
+    <path d="M433 110c19-19 50-22 74-9 27 15 38 48 23 74-12 21-38 33-61 23" stroke-width="6"/>
+    <path d="M446 115c16-10 36-11 52-2 18 10 26 31 17 48-7 13-24 21-39 16" stroke-width="5"/>
+    <path d="M212 284 354 286" stroke-width="6"/>
+    <path d="M212 284 335 318 354 286" stroke-width="5"/>
+    <path d="M354 286 389 305" stroke-width="6"/>
+    <path d="M389 305h22" stroke-width="6"/>
+  </g>
+</svg>
