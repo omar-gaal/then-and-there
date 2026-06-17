@@ -27,7 +27,7 @@ function App() {
   if (screen === "copenhagen") {
     return (
       <main className="app-shell">
-        <CopenhagenExperience onBackToMap={() => setScreen("landing")} />
+        <CopenhagenExperience />
       </main>
     );
   }

@@ -942,20 +942,6 @@ h1 {
   transform: none;
 }
 
-.copenhagen-map-exit {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: 10;
-  margin: 0;
-}
-
-.copenhagen-finger-cursor {
-  position: absolute;
-  z-index: 11;
-  pointer-events: none;
-}
-
 .map-toggle {
   position: absolute;
   top: 66px;

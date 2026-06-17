@@ -1,5 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Webcam from "react-webcam";
 import { VIDEO_CONSTRAINTS } from "../handTracking";
 import { getPartMapPosition } from "../game/mapMarkers";
@@ -97,28 +96,7 @@ const DEFAULT_WORLD_DEBUG = {
   yawInfluence: 0.04,
 };
 
-const COUNTDOWN_SECONDS = 3
-
-function CopenhagenFingerCursor({ fingerPos, countdown }) {
-  const isHovering = countdown !== null
-  const progress = isHovering ? ((3 - countdown) / 3) * 276.5 : 0
-  return (
-    <div
-      className="hand-cursor copenhagen-finger-cursor"
-      data-hovering={isHovering}
-      style={{ '--cx': `${fingerPos.x * 100}%`, '--cy': `${fingerPos.y * 100}%` }}
-    >
-      {isHovering && (
-        <svg className="cursor-ring" viewBox="0 0 100 100" aria-hidden="true">
-          <circle className="cursor-ring-track" cx="50" cy="50" r="44" />
-          <circle className="cursor-ring-fill" cx="50" cy="50" r="44" style={{ '--progress': progress }} />
-        </svg>
-      )}
-    </div>
-  )
-}
-
-export function CopenhagenExperience({ onBackToMap }) {
+export function CopenhagenExperience() {
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isDebugOpen, setIsDebugOpen] = useState(() => {
     try {
@@ -147,57 +125,6 @@ export function CopenhagenExperience({ onBackToMap }) {
     tracking,
     webcamRef,
   } = useCopenhagenTracking();
-  const stageRef = useRef(null)
-  const mapExitHoverRef = useRef(null)
-  const mapExitHoverStartRef = useRef(null)
-  const mapExitFiredRef = useRef(false)
-  const [mapExitCountdown, setMapExitCountdown] = useState(null)
-
-  // Hover "← Map" button for 3s to go back — reuses existing hand tracking, no extra camera
-  useEffect(() => {
-    const activeHand = tracking.leftHand?.visible ? tracking.leftHand
-      : tracking.rightHand?.visible ? tracking.rightHand : null
-    const fingerPos = activeHand?.visible ? { x: activeHand.x, y: activeHand.y } : null
-
-    if (!fingerPos || !onBackToMap) {
-      mapExitHoverStartRef.current = null
-      setMapExitCountdown(null)
-      return
-    }
-
-    const stageRect = stageRef.current?.getBoundingClientRect()
-    const btnRect = mapExitHoverRef.current?.getBoundingClientRect()
-
-    if (!stageRect || !btnRect) {
-      mapExitHoverStartRef.current = null
-      setMapExitCountdown(null)
-      return
-    }
-
-    const pointX = stageRect.left + fingerPos.x * stageRect.width
-    const pointY = stageRect.top + fingerPos.y * stageRect.height
-    const isOver = pointX >= btnRect.left && pointX <= btnRect.right
-      && pointY >= btnRect.top && pointY <= btnRect.bottom
-
-    if (!isOver) {
-      mapExitHoverStartRef.current = null
-      mapExitFiredRef.current = false
-      setMapExitCountdown(null)
-      return
-    }
-
-    if (mapExitHoverStartRef.current === null) mapExitHoverStartRef.current = Date.now()
-
-    const elapsed = (Date.now() - mapExitHoverStartRef.current) / 1000
-    const remaining = Math.ceil(Math.max(0, COUNTDOWN_SECONDS - elapsed))
-    setMapExitCountdown(remaining)
-
-    if (remaining === 0 && !mapExitFiredRef.current) {
-      mapExitFiredRef.current = true
-      onBackToMap()
-    }
-  }, [onBackToMap, tracking])
-
   const toggleMap = useCallback(() => {
     setIsMapOpen((current) => !current);
   }, []);
@@ -238,7 +165,7 @@ export function CopenhagenExperience({ onBackToMap }) {
       </header>
 
       <section className="copenhagen-game" aria-label="Copenhagen bike part game">
-        <div className="street-frame" ref={stageRef}>
+        <div className="street-frame">
           <ThreeStreetScene
             onMapData={setMapData}
             onPickupDebug={setPickupDebug}
@@ -327,21 +254,6 @@ export function CopenhagenExperience({ onBackToMap }) {
           )}
 
           <div ref={puckRef} className="hidden-tracking-puck" aria-hidden="true" />
-
-          {onBackToMap && (
-            <div className="hover-zone copenhagen-map-exit" ref={mapExitHoverRef} data-variant="map">
-              <button type="button" className="hover-start-btn" onClick={onBackToMap}>
-                {mapExitCountdown !== null ? (mapExitCountdown || '✓') : '← Map'}
-              </button>
-            </div>
-          )}
-
-          {(tracking.leftHand?.visible || tracking.rightHand?.visible) && (
-            <CopenhagenFingerCursor
-              fingerPos={tracking.leftHand?.visible ? { x: tracking.leftHand.x, y: tracking.leftHand.y } : { x: tracking.rightHand.x, y: tracking.rightHand.y }}
-              countdown={mapExitCountdown}
-            />
-          )}
         </div>
       </section>
     </>
