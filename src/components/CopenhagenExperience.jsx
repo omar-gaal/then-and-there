@@ -758,10 +758,10 @@ export function CopenhagenExperience({ onBackToCities }) {
                   <blockquote>{completionFact}</blockquote>
                 </div>
                 <div className="completion-actions">
-                  <button type="button" onClick={handleBackToCities}>
+                  <button type="button" className="action-btn btn-ghost" onClick={handleBackToCities}>
                     Back to Cities
                   </button>
-                  <button type="button" onClick={handlePlayAgain}>
+                  <button type="button" className="action-btn btn-amber" onClick={handlePlayAgain}>
                     Play Again
                   </button>
                 </div>
@@ -774,7 +774,7 @@ export function CopenhagenExperience({ onBackToCities }) {
           {!isRunning && !tutorialActive && (
             <button
               type="button"
-              className="camera-start"
+              className="camera-start action-btn btn-dark"
               onClick={startCamera}
               disabled={isLoading}
             >
