@@ -134,9 +134,14 @@ function HoverChoiceButton({
     if (!isHovered) {
       hoverStartRef.current = null;
       firedRef.current = false;
-      setCountdown(null);
-      onCountdownChange?.(null);
-      return undefined;
+      const timeoutId = window.setTimeout(() => {
+        setCountdown(null);
+        onCountdownChange?.(null);
+      }, 0);
+
+      return () => {
+        window.clearTimeout(timeoutId);
+      };
     }
 
     if (hoverStartRef.current === null) {

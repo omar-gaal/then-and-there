@@ -2,12 +2,16 @@
 import { getTownAreaLabel } from '../game/townAreas'
 
 export function DebugPanel({
+  collectedCount = 0,
+  completionTriggered = false,
   currentAreaId,
   isMapOpen,
   isOpen,
   mapGestureDebug,
   onToggle,
+  postcardVisible = false,
   pickupDebug,
+  totalParts = 0,
   tracking,
   worldDebug,
 }) {
@@ -46,6 +50,9 @@ export function DebugPanel({
           <span>final walking: {tracking.motion?.walking ? 'true' : 'false'}</span>
           <span>idle drift blocked: {tracking.motion?.idleDriftBlocked ? 'true' : 'false'}</span>
           <span>movement vector x/z: {formatVector(tracking.motion)}</span>
+          <span>player world x/z: {formatDebugPoint(worldDebug.playerWorldX, worldDebug.playerWorldZ)}</span>
+          <span>local forward/lateral: {formatDebugPoint(worldDebug.localForward, worldDebug.localLateral)}</span>
+          <span>map player x/y: {formatDebugPoint(worldDebug.mapPlayerX, worldDebug.mapPlayerY)}</span>
           <span>player/world z: {formatSpeed(worldDebug.worldZ)}</span>
           <span>world scrolling: {worldDebug.scrolling ? 'true' : 'false'}</span>
           <span>movement speed: {formatSpeed(tracking.motion?.speed)}</span>
@@ -86,6 +93,9 @@ export function DebugPanel({
           <span>gesture blocked reason: {worldDebug.armTurnBlockedReason ?? 'ready'}</span>
           <span>gesture triggered: {worldDebug.armTurnTriggered || 'none'}</span>
           <span>arm turn cooldown: {(worldDebug.armTurnCooldownMs / 1000).toFixed(1)}s</span>
+          <span>arms crossed: {worldDebug.armsCrossed ? 'true' : 'false'}</span>
+          <span>turn around cooldown: {((worldDebug.turnAroundCooldownMs ?? 0) / 1000).toFixed(1)}s</span>
+          <span>last turn trigger: {worldDebug.lastTurnAroundTrigger ?? 'none'}</span>
           <span>current heading: {formatAngle(worldDebug.heading)}</span>
           <span>effective avatar yaw: {formatAngle(worldDebug.effectiveAvatarYaw)}</span>
           <span>avatar facing angle: {formatAngle(worldDebug.facingAngle)}</span>
@@ -101,6 +111,17 @@ export function DebugPanel({
           <span>pose mirror x: {worldDebug.poseMirrorX}</span>
           <span>pose debug mode: {worldDebug.poseDebugMode ? 'true' : 'false'}</span>
           <span>nearby part: {pickupDebug.nearbyPart}</span>
+          <span>nearby part id: {pickupDebug.debug?.nearbyPartId ?? 'none'}</span>
+          <span>pickup area: {pickupDebug.debug?.currentAreaId ?? worldDebug.currentAreaId ?? currentAreaId}</span>
+          <span>avatar pickup x/z: {formatDebugPoint(pickupDebug.debug?.avatarSceneX, pickupDebug.debug?.avatarSceneZ)}</span>
+          <span>handlebar pickup x/z: {formatDebugPoint(pickupDebug.debug?.handlebarSceneX, pickupDebug.debug?.handlebarSceneZ)}</span>
+          <span>pickup distance: {formatNullableSpeed(pickupDebug.debug?.pickupDistance)}</span>
+          <span>handlebar distance: {formatNullableSpeed(pickupDebug.debug?.handlebarDistance)}</span>
+          <span>collected count: {formatCount(collectedCount)}</span>
+          <span>total parts: {formatCount(totalParts)}</span>
+          <span>is complete: {pickupDebug.isComplete ? 'true' : 'false'}</span>
+          <span>postcard visible: {postcardVisible ? 'true' : 'false'}</span>
+          <span>completion triggered: {completionTriggered ? 'true' : 'false'}</span>
           <span>hands low: {pickupDebug.handsLow ? 'true' : 'false'}</span>
           <span>pickup gesture: {pickupDebug.gestureState}</span>
           <span>perf fps: {formatSpeed(perf.fps)}</span>
@@ -116,6 +137,10 @@ export function DebugPanel({
           <span>perf world/camera ms: {formatMs(perf.avgWorldMs)}</span>
           <span>perf pickup loop ms: {formatMs(perf.avgPickupMs)}</span>
           <span>perf map/debug ms: {formatMs(perf.avgMapDebugMs)}</span>
+          <span>camera inside building: {worldDebug.occlusionCameraInsideBuilding ? 'true' : 'false'}</span>
+          <span>faded buildings: {formatCount(worldDebug.occlusionFadedCount)}</span>
+          <span>faded building ids: {formatList(worldDebug.occlusionFadedIds)}</span>
+          <span>occlusion mode: {worldDebug.occlusionMode ?? 'hide'}</span>
           <span>MediaPipe active: {perf.mediaPipeActive ? 'true' : 'false'}</span>
           <span>MediaPipe frame ms: {formatMs(perf.mediaPipeFrameMs)}</span>
           <span>MediaPipe hand ms: {formatMs(perf.mediaPipeHandMs)}</span>
@@ -138,12 +163,28 @@ function formatSpeed(speed) {
   return (speed ?? 0).toFixed(2)
 }
 
+function formatNullableSpeed(speed) {
+  return Number.isFinite(speed) ? speed.toFixed(2) : 'n/a'
+}
+
+function formatDebugPoint(x, z) {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) {
+    return 'n/a'
+  }
+
+  return `${x.toFixed(2)}, ${z.toFixed(2)}`
+}
+
 function formatMs(value) {
   return `${formatSpeed(value)}ms`
 }
 
 function formatCount(value) {
   return Math.round(value ?? 0).toString()
+}
+
+function formatList(value) {
+  return Array.isArray(value) && value.length > 0 ? value.join(', ') : 'none'
 }
 
 function formatPointXY(point) {
