@@ -1303,19 +1303,22 @@ h1 {
   max-height: calc(100% - 112px);
   padding: 15px;
   overflow: auto;
-  border: 1px solid rgba(20, 22, 21, 0.22);
+  border: 1px solid rgba(20, 22, 21, 0.2);
   border-radius: 8px;
   background:
-    radial-gradient(circle at 14% 12%, rgba(117, 83, 52, 0.035), transparent 24%),
-    radial-gradient(circle at 86% 78%, rgba(117, 83, 52, 0.035), transparent 24%),
+    radial-gradient(circle at 12% 14%, rgba(117, 83, 52, 0.055), transparent 23%),
+    radial-gradient(circle at 86% 78%, rgba(117, 83, 52, 0.045), transparent 25%),
+    linear-gradient(94deg, rgba(23, 26, 24, 0.018) 0 1px, transparent 1px 100%),
     repeating-linear-gradient(
       -4deg,
       transparent 0 17px,
-      rgba(20, 22, 21, 0.025) 17px 18px
+      rgba(20, 22, 21, 0.018) 17px 18px
     ),
-    #fffaf0;
+    #fff6df;
   color: #171a18;
-  box-shadow: 0 22px 58px rgba(28, 34, 30, 0.22);
+  box-shadow:
+    0 22px 58px rgba(28, 34, 30, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.36);
   transform: rotate(-0.25deg);
   backdrop-filter: blur(10px);
 }
@@ -1360,73 +1363,79 @@ h1 {
   height: min(56vh, 390px);
   min-height: 320px;
   overflow: hidden;
-  border: 1px solid rgba(20, 22, 21, 0.18);
+  border: 1px solid rgba(20, 22, 21, 0.14);
   border-radius: 8px;
   background:
-    radial-gradient(circle at 32% 44%, rgba(20, 22, 21, 0.045) 0 1px, transparent 2px),
-    radial-gradient(circle at 70% 18%, rgba(20, 22, 21, 0.04) 0 1px, transparent 2px),
-    radial-gradient(circle at 78% 72%, rgba(20, 22, 21, 0.035) 0 1px, transparent 2px),
+    radial-gradient(circle at 18% 28%, rgba(158, 118, 76, 0.08) 0 1px, transparent 2px),
+    radial-gradient(circle at 74% 16%, rgba(20, 22, 21, 0.035) 0 1px, transparent 2px),
+    radial-gradient(circle at 78% 72%, rgba(20, 22, 21, 0.03) 0 1px, transparent 2px),
     repeating-linear-gradient(
       2deg,
-      rgba(20, 22, 21, 0.018) 0 1px,
+      rgba(20, 22, 21, 0.014) 0 1px,
       transparent 1px 18px
     ),
-    #fffdf6;
+    #fff9e9;
 }
 
-.town-map-street,
-.town-map-left-street {
+.town-map-routes {
   position: absolute;
+  inset: 0;
   z-index: 1;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
 }
 
-.town-map-street {
-  top: 6%;
-  bottom: 6%;
-  left: 57%;
-  z-index: 2;
-  width: 18%;
+.town-map-road-edge,
+.town-map-road-center {
+  fill: none;
+  stroke: rgba(23, 26, 24, 0.78);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
 
-.town-map-left-street {
-  top: 40%;
-  left: 16%;
-  width: 50%;
-  height: 16%;
+.town-map-road-edge {
+  stroke-width: 1.35;
 }
 
-.town-map-street span,
-.town-map-left-street span {
+.town-map-road-edge-a {
+  stroke-dasharray: 5.5 2.2 12 1.8;
+}
+
+.town-map-road-edge-b {
+  stroke-dasharray: 11 2 4 2.4;
+}
+
+.town-map-road-center {
+  stroke: rgba(23, 26, 24, 0.24);
+  stroke-width: 1;
+  stroke-dasharray: 3 4.5;
+}
+
+.town-map-street-label {
   position: absolute;
-  background: #171a18;
-  opacity: 0.92;
+  z-index: 2;
+  padding: 2px 5px;
+  background: rgba(255, 249, 233, 0.78);
+  color: rgba(23, 26, 24, 0.68);
+  font-family: var(--font-heading);
+  font-size: 0.72rem;
+  line-height: 1;
+  pointer-events: none;
 }
 
-.town-map-street span {
-  top: 1%;
-  bottom: 1%;
-  left: 50%;
-  width: 4px;
-  border-radius: 999px;
-  transform: translateX(-50%) rotate(0.6deg);
-  box-shadow:
-    -9px 0 0 -7px #171a18,
-    8px 0 0 -7px #171a18;
-}
-
-.town-map-left-street span {
-  left: 0;
-  right: 0;
+.town-map-main-label {
+  left: 76%;
   top: 50%;
-  height: 4px;
-  border-radius: 999px;
-  transform: translateY(-50%) rotate(-1.2deg);
-  box-shadow:
-    0 -8px 0 -7px #171a18,
-    0 8px 0 -7px #171a18;
+  transform: translate(-50%, -50%) rotate(88deg);
+}
+
+.town-map-left-label {
+  left: 37%;
+  top: 39%;
+  transform: translate(-50%, -50%) rotate(-3deg);
 }
 
 .town-map-area {
@@ -1437,27 +1446,27 @@ h1 {
   display: grid;
   justify-items: center;
   gap: 3px;
-  color: rgba(23, 26, 24, 0.7);
-  font-size: 0.66rem;
+  color: rgba(23, 26, 24, 0.56);
+  font-size: 0.58rem;
   font-weight: 760;
   text-align: center;
   transform: translate(-50%, -50%);
 }
 
 .town-map-area span {
-  width: 13px;
-  height: 13px;
-  border: 2px solid rgba(23, 26, 24, 0.34);
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid rgba(23, 26, 24, 0.28);
   border-radius: 999px;
   background: #fffdf6;
   box-shadow: none;
 }
 
 .town-map-area em {
-  max-width: 76px;
+  max-width: 58px;
   padding: 2px 4px;
   border-radius: 0;
-  background: rgba(255, 253, 246, 0.78);
+  background: rgba(255, 249, 233, 0.7);
   font-style: normal;
   line-height: 1.08;
   transform: rotate(-1deg);
@@ -1485,7 +1494,7 @@ h1 {
   align-items: center;
   gap: 7px;
   color: #171a18;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-style: normal;
   font-weight: 820;
   white-space: nowrap;
@@ -1493,8 +1502,8 @@ h1 {
 }
 
 .town-map-player span {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border: 2px solid #fffdf6;
   border-radius: 999px;
   background: #2f80ed;
@@ -1507,7 +1516,7 @@ h1 {
   width: 0;
   height: 0;
   color: rgba(23, 26, 24, 0.78);
-  font-size: 0.58rem;
+  font-size: 0.6rem;
   font-weight: 760;
   line-height: 1.05;
   white-space: nowrap;
@@ -1519,9 +1528,9 @@ h1 {
   top: 0;
   width: 17px;
   height: 17px;
-  border: 2px solid rgba(23, 26, 24, 0.48);
+  border: 1.5px solid rgba(23, 26, 24, 0.58);
   border-radius: 999px;
-  background: #fffdf6;
+  background: #fff9e9;
   color: #171a18;
   display: grid;
   place-items: center;
@@ -1529,7 +1538,7 @@ h1 {
   font-size: 0.74rem;
   font-weight: 820;
   line-height: 1;
-  box-shadow: 0 2px 0 rgba(20, 22, 21, 0.08);
+  box-shadow: 0 1px 0 rgba(20, 22, 21, 0.08);
   transform: translate(-50%, -50%) rotate(-4deg);
 }
 
@@ -1538,7 +1547,7 @@ h1 {
   max-width: 62px;
   padding: 2px 4px;
   border-radius: 0;
-  background: rgba(255, 253, 246, 0.82);
+  background: rgba(255, 249, 233, 0.82);
   font-style: normal;
   line-height: 1.08;
   white-space: normal;
@@ -1550,6 +1559,15 @@ h1 {
   left: var(--label-x);
   top: var(--label-y);
   transform: translateY(-50%);
+}
+
+.town-map-part[data-map-side="right"] em {
+  text-align: left;
+}
+
+.town-map-part[data-map-side="left"],
+.town-map-part[data-map-side="leftStreet"] {
+  text-align: right;
 }
 
 .town-map-part[data-collected="true"] {
