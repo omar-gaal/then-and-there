@@ -4,18 +4,18 @@ const ROUND_SECONDS = 20;
 const STARTING_LIVES = 3;
 const PLAYER_X = 0.2;
 const GRAVITY = 2.3;
-const JUMP_VELOCITY = 1.8;
+const JUMP_VELOCITY = 2.15;
 const CLEAR_HEIGHT = 0.14;
 const TULIP_KINDS = ["red", "yellow", "pink", "purple"];
 
 const AMSTERDAM_FUN_FACTS = [
-  "The Netherlands grows over 4.3 billion tulip bulbs every year — about 80% of the world's total supply.",
+  "The Netherlands grows over 4.3 billion tulip bulbs every year , about 80% of the world's total supply.",
   "Amsterdam has more than 1,200 bridges, making it one of the most bridge-dense cities in Europe.",
-  "The tulip originally came from Central Asia and Turkey — Dutch traders brought it to the Netherlands in the 1600s.",
+  "The tulip originally came from Central Asia and Turkey , Dutch traders brought it to the Netherlands in the 1600s.",
   "During 'Tulip Mania' in 1637, a single tulip bulb could cost more than a canal house in Amsterdam.",
   "Amsterdam's Keukenhof garden plants around 7 million flower bulbs each year, mostly tulips.",
   "The Dutch export roughly €5.5 billion worth of cut flowers every year, with tulips leading the way.",
-  "Amsterdam has over 800,000 bicycles — more bikes than people in the city.",
+  "Amsterdam has over 800,000 bicycles , more bikes than people in the city.",
   "The narrowest house in Amsterdam is just 2.02 metres wide on the Singel canal.",
 ];
 
@@ -147,7 +147,7 @@ export function useTulipGame({ isCalibrated, isRunning, jumpCount }) {
       const finishing = ranOutOfTime || ranOutOfLives;
       const status = finishing ? "finished" : "playing";
       const funFact =
-        ranOutOfTime && !current.funFact
+        finishing && !current.funFact
           ? AMSTERDAM_FUN_FACTS[Math.floor(Math.random() * AMSTERDAM_FUN_FACTS.length)]
           : current.funFact ?? null;
 

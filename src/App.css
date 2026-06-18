@@ -337,6 +337,10 @@ h1 {
   align-items: stretch;
 }
 
+.workspace--stage-only {
+  grid-template-columns: 1fr;
+}
+
 .stage {
   position: relative;
   width: 100%;
@@ -441,7 +445,7 @@ h1 {
   filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 12px rgba(255, 184, 77, 0.7));
 }
 
-.stage-hud {
+.stage-chips {
   position: absolute;
   top: 14px;
   left: 14px;
@@ -451,19 +455,38 @@ h1 {
   pointer-events: none;
 }
 
-.stage-hud span {
-  min-width: 62px;
-  min-height: 32px;
-  padding: 0 11px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 7px;
-  background: #2a2520;
-  color: #ffffff;
-  display: inline-flex;
+.stage-chip {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 800;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 10px;
+  background: rgba(15, 13, 10, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  color: #ffffff;
+  font-family: var(--font-main);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stage-chip[data-warning] {
+  background: rgba(233, 114, 96, 0.25);
+  border-color: rgba(233, 114, 96, 0.5);
+}
+
+.stage-chip-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.stage-status {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  pointer-events: none;
 }
 
 .start-overlay {
@@ -610,6 +633,52 @@ h1 {
   text-transform: none;
 }
 
+.how-to-play-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(340px, 90%);
+  margin: 0 0 20px;
+  padding: 18px 20px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1.5px solid var(--line);
+  box-shadow: var(--shadow-soft);
+  text-align: left;
+}
+
+.how-to-play-label {
+  font-family: var(--font-heading);
+  font-size: 1.3rem;
+  font-weight: 400;
+  color: var(--teal-dark);
+  letter-spacing: 0;
+}
+
+.how-to-play-steps {
+  margin: 0;
+  padding: 0 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.how-to-play-steps li {
+  font-family: var(--font-main);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.round-overlay-eyebrow {
+  margin: 0 0 4px !important;
+  font-size: 0.82rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+
 .post-round-actions {
   display: flex;
   flex-direction: column;
@@ -753,15 +822,21 @@ h1 {
     aspect-ratio: 3 / 4;
   }
 
-  .stage-hud {
+  .stage-chips {
     top: 10px;
     left: 10px;
+    gap: 6px;
   }
 
-  .stage-hud span {
-    min-width: 58px;
-    min-height: 32px;
-    font-size: 0.92rem;
+  .stage-chip {
+    padding: 5px 10px;
+    font-size: 0.85rem;
+    gap: 5px;
+  }
+
+  .stage-status {
+    top: 10px;
+    right: 10px;
   }
 
   .round-overlay strong {
@@ -1879,12 +1954,13 @@ h1 {
   position: absolute;
   z-index: 4;
   left: 20%;
-  bottom: calc(28% + var(--jump-y));
+  bottom: 28%;
   width: 50px;
   height: 105px;
   filter: drop-shadow(0 9px 5px rgba(0, 0, 0, 0.25));
   transition: bottom 45ms linear;
 }
+
 
 .runner span {
   position: absolute;
@@ -2087,6 +2163,11 @@ h1 {
   margin: 4px 0 8px;
 }
 
+.hover-zone[data-variant="start"] {
+  width: 200px;
+  height: 56px;
+}
+
 .post-round-actions .hover-zone {
   margin: 0;
 }
@@ -2122,7 +2203,7 @@ h1 {
   width: 100%;
   height: 100%;
   border: 0;
-  border-radius: 999px;
+  border-radius: 14px;
   background: var(--text-strong);
   color: #fff;
   font-family: var(--font-heading);
@@ -2142,13 +2223,25 @@ h1 {
   transform: scale(1.05);
 }
 
-.hover-zone[data-variant="map"] .hover-start-btn {
-  background: var(--amsterdam);
+.hover-zone[data-variant="start"] .hover-start-btn {
+  background: var(--teal);
   color: #ffffff;
 }
 
-.hover-zone[data-variant="map"] .hover-start-btn:hover {
+.hover-zone[data-variant="start"] .hover-start-btn:hover {
   background: var(--teal-dark);
+}
+
+.hover-zone[data-variant="map"] .hover-start-btn {
+  background: var(--bg);
+  color: var(--text-strong);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+}
+
+.hover-zone[data-variant="map"] .hover-start-btn:hover {
+  background: var(--bg-alt);
+  border-color: var(--text-strong);
 }
 
 .round-overlay .paris-map-button {
@@ -2245,7 +2338,7 @@ h1 {
     bottom: 25%;
   }
   .runner {
-    bottom: calc(26% + var(--jump-y));
+    bottom: 26%;
   }
 }
 
@@ -2283,9 +2376,23 @@ h1 {
   line-height: 1 !important;
 }
 
+@keyframes runner-container-jump {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%       { transform: translateY(-300px) rotate(-6deg); }
+}
+
+@keyframes runner-shadow-jump {
+  0%, 100% { transform: translateX(-50%) scaleX(var(--shadow-scale)); }
+  50%       { transform: translateX(-50%) translateY(-240px) scaleX(calc(var(--shadow-scale) * 0.6)); }
+}
+
 .runner[data-jumping="true"] {
+  animation: runner-container-jump 1.75s ease-in-out;
   filter: drop-shadow(0 28px 12px rgba(0, 0, 0, 0.1));
-  transform: rotate(-6deg);
+}
+
+.amsterdam-stage:has(.runner[data-jumping="true"]) .runner-shadow {
+  animation: runner-shadow-jump 1.75s ease-in-out;
 }
 
 .runner[data-jumping="true"] .runner-head {

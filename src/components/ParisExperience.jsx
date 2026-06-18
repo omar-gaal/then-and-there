@@ -4,8 +4,6 @@ import { movePuckToPoint } from '../gestures'
 import { useCatchGame } from '../hooks/useCatchGame'
 import { useHandHover } from '../hooks/useHandHover'
 import { useHandTracking } from '../hooks/useHandTracking'
-import { ParisPanel } from './ParisPanel'
-import { StatusPill } from './StatusPill'
 import { TrackingStage } from './TrackingStage'
 
 const COUNTDOWN_SECONDS = 3
@@ -138,9 +136,8 @@ export function ParisExperience({ onBackToMap }) {
           <p className="eyebrow">Paris prototype</p>
           <h1>Paris Pastry Catch</h1>
         </div>
-        <StatusPill mode={tracking.mode} label={tracking.label} />
       </header>
-      <section className="workspace" aria-label="Paris pastry catching game">
+      <section className="workspace workspace--stage-only" aria-label="Paris pastry catching game">
         <TrackingStage
           activeHoverId={activeHoverId}
           canvasRef={canvasRef}
@@ -164,9 +161,9 @@ export function ParisExperience({ onBackToMap }) {
           puckRef={puckRef}
           stageRef={stageRef}
           startHoverRef={startHoverRef}
+          tracking={tracking}
           webcamRef={webcamRef}
         />
-        <ParisPanel game={game} isLoading={isLoading} isRunning={isRunning} onStartCamera={startCamera} onStopCamera={stopCamera} tracking={tracking} />
       </section>
     </>
   )

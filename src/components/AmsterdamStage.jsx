@@ -1,4 +1,7 @@
 import Webcam from 'react-webcam'
+import { StatusPill } from './StatusPill'
+
+const STARTING_LIVES = 3
 
 export function AmsterdamStage({
   activeHoverId,
@@ -30,6 +33,7 @@ export function AmsterdamStage({
 }) {
   const showHandTracking = !isRunning || game.status === 'finished'
   const showFingerCursor = showHandTracking && fingerPos
+  const isPlaying = isRunning && game.status === 'playing'
 
   return (
     <div className="amsterdam-stage" data-round={game.status} ref={stageRef}>
@@ -45,7 +49,7 @@ export function AmsterdamStage({
         ))}
       </div>
       <div className="runner-shadow" style={{ '--shadow-scale': Math.max(0.35, 1 - game.avatarY * 0.7), '--shadow-opacity': Math.max(0.18, 0.52 - game.avatarY * 0.3) }}></div>
-      <div className="runner" data-jumping={game.avatarY > 0.04 ? 'true' : 'false'} style={{ '--jump-y': `${game.avatarY * 1800}px` }} aria-label="Player avatar">
+      <div className="runner" data-jumping={game.avatarY > 0.04 ? 'true' : 'false'} aria-label="Player avatar">
         <span className="runner-head"></span>
         <span className="runner-body"></span>
         <span className="runner-arm runner-arm-a"></span>
@@ -56,7 +60,6 @@ export function AmsterdamStage({
 
       {/* Camera preview */}
       <div className="pose-preview">
-        {/* Hand tracking webcam — before game and after round ends */}
         {showHandTracking && handIsReady && (
           <Webcam
             ref={handWebcamRef}
@@ -67,7 +70,6 @@ export function AmsterdamStage({
             videoConstraints={videoConstraints}
           />
         )}
-        {/* Pose webcam — while game is actively running */}
         {isRunning && game.status !== 'finished' && (
           <Webcam
             ref={webcamRef}
@@ -84,28 +86,55 @@ export function AmsterdamStage({
         <span>{showHandTracking ? 'Hover to start' : tracking.label}</span>
       </div>
 
-      {isRunning && game.status !== 'finished' && (
-        <div className="stage-hud">
-          <span>{game.score} pts</span>
-          <span>{Math.ceil(game.timeLeft)}s</span>
-          <span>Lives {game.lives}</span>
+      {/* HUD chips — top-left, visible while playing */}
+      {isPlaying && (
+        <div className="stage-chips" aria-live="polite">
+          <div className="stage-chip">
+            <span className="stage-chip-icon">⏱</span>
+            {formatChipTime(game.timeLeft)}
+          </div>
+          <div className="stage-chip">
+            <span className="stage-chip-icon">🌷</span>
+            {game.cleared}
+          </div>
+          <div className="stage-chip" data-warning={game.lives === 1 ? "true" : undefined}>
+            {Array.from({ length: STARTING_LIVES }, (_, i) => (
+              <span key={i} className="stage-chip-icon">{i < game.lives ? '❤️' : '🖤'}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Status pill — top-right, visible while playing */}
+      {isPlaying && (
+        <div className="stage-status">
+          <StatusPill mode={tracking.mode} label={tracking.label} />
         </div>
       )}
 
       {/* Pre-game overlay */}
       {!isRunning && (
         <div className="round-overlay">
-          <p>Amsterdam challenge</p>
+          <p className="round-overlay-eyebrow">Amsterdam challenge</p>
           <strong>Jump the tulips</strong>
-          <HoverZone countdown={countdown} label={isLoading ? 'Loading…' : 'Start'} onClick={onStartCamera} disabled={isLoading} targetRef={startHoverRef} />
+          <div className="how-to-play-card">
+            <span className="how-to-play-label">How to play</span>
+            <ul className="how-to-play-steps">
+              <li>Jump in place to make your character leap over tulips</li>
+              <li>Hit a tulip and you lose a ❤️ life, you have 3</li>
+              <li>Clear as many tulips as you can in 20 seconds</li>
+              <li>Make sure your full body is visible to the camera!</li>
+            </ul>
+          </div>
+          <HoverZone countdown={countdown} label={isLoading ? 'Loading…' : 'Begin round'} onClick={onStartCamera} disabled={isLoading} targetRef={startHoverRef} variant="start" />
           <p className="hover-hint">{fingerPos ? 'Hold still…' : 'Point your finger at the button'}</p>
         </div>
       )}
 
-      {/* Post-round overlay — same hover mechanic */}
+      {/* Post-round overlay */}
       {isRunning && isCalibrated && game.status === 'finished' && (
         <div className="round-overlay">
-          <p>Canal run complete</p>
+          <p className="round-overlay-eyebrow">Canal run complete</p>
           <strong>{game.score} pts</strong>
           {game.funFact && (
             <div className="fun-fact-card">
@@ -123,7 +152,7 @@ export function AmsterdamStage({
             />
             <HoverZone
               countdown={activeHoverId === 'map' ? countdown : null}
-              label="Map"
+              label="Back to map"
               onClick={onBackToMap}
               targetRef={mapHoverRef}
               variant="map"
@@ -133,7 +162,6 @@ export function AmsterdamStage({
         </div>
       )}
 
-      {/* Finger cursor — ring animation lives on the cursor itself */}
       {showFingerCursor && (
         <FingerCursor fingerPos={fingerPos} countdown={countdown} />
       )}
@@ -143,7 +171,7 @@ export function AmsterdamStage({
           <strong>Stand still</strong>
           <span>
             {tracking.mode === 'searching'
-              ? 'Back up until your full body is visible — hips must be in frame'
+              ? 'Back up until your full body is visible, hips must be in frame'
               : `Calibrating… ${Math.round(tracking.calibrationProgress * 100)}%`}
           </span>
           <div><i style={{ width: `${tracking.calibrationProgress * 100}%` }}></i></div>
@@ -191,4 +219,11 @@ function FingerCursor({ fingerPos, countdown }) {
       )}
     </div>
   )
+}
+
+function formatChipTime(timeLeft) {
+  const s = Math.ceil(Math.max(0, timeLeft))
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return `${m}:${String(rem).padStart(2, '0')}`
 }
