@@ -2,12 +2,17 @@
 import { getTownAreaLabel } from '../game/townAreas'
 
 export function DebugPanel({
+  collectedCount = 0,
+  completionTriggered = false,
   currentAreaId,
+  guideDebug,
   isMapOpen,
   isOpen,
   mapGestureDebug,
   onToggle,
+  postcardVisible = false,
   pickupDebug,
+  totalParts = 0,
   tracking,
   worldDebug,
 }) {
@@ -16,6 +21,7 @@ export function DebugPanel({
   const rightWrist = tracking.pose?.rightWrist
   const leftShoulder = tracking.pose?.leftShoulder
   const rightShoulder = tracking.pose?.rightShoulder
+  const perf = worldDebug.perf ?? {}
 
   return (
     <div className="debug-panel-shell" data-open={isOpen ? 'true' : 'false'}>
@@ -32,6 +38,14 @@ export function DebugPanel({
         <div className="avatar-debug" aria-live="polite">
           <span>body detected: {tracking.bodyCenter?.visible ? 'yes' : 'no'}</span>
           <span>body direction: {tracking.motion?.bodyDirection ?? 'forward'}</span>
+          <span>body center x: {formatSpeed(tracking.motion?.bodyCenterX)}</span>
+          <span>neutral center x: {formatSpeed(tracking.motion?.neutralCenterX)}</span>
+          <span>lean amount: {formatSpeed(tracking.motion?.leanAmount)}</span>
+          <span>side movement: {formatSpeed(tracking.motion?.sideMovement)}</span>
+          <span>final lateral movement: {formatSpeed(worldDebug.finalLateralMovement)}</span>
+          <span>autoCalibrating: {tracking.motion?.autoCalibrating ? 'true' : 'false'}</span>
+          <span>lean left: {tracking.motion?.leanLeft ? 'true' : 'false'}</span>
+          <span>lean right: {tracking.motion?.leanRight ? 'true' : 'false'}</span>
           <span>raw directionX: {formatSpeed(tracking.motion?.rawDirectionX)}</span>
           <span>final directionX: {formatSpeed(tracking.motion?.finalDirectionX)}</span>
           <span>walking in place: {tracking.motion?.walking ? 'true' : 'false'}</span>
@@ -43,14 +57,48 @@ export function DebugPanel({
           <span>arm swing confidence: {formatSpeed(tracking.motion?.armSwingConfidence)}</span>
           <span>walking confidence: {formatSpeed(tracking.motion?.walkingConfidence)}</span>
           <span>final walking: {tracking.motion?.walking ? 'true' : 'false'}</span>
+          <span>activeGuideStep: {guideDebug?.activeGuideStep ?? 'hidden'}</span>
+          <span>guideVisible: {guideDebug?.guideVisible ? 'true' : 'false'}</span>
+          <span>guideCompletedWalk: {guideDebug?.guideCompletedWalk ? 'true' : 'false'}</span>
+          <span>guideCompletedLeft: {guideDebug?.guideCompletedLeft ? 'true' : 'false'}</span>
+          <span>guideCompletedRight: {guideDebug?.guideCompletedRight ? 'true' : 'false'}</span>
+          <span>nearIntersectionGuideZone: {guideDebug?.nearIntersectionGuideZone ? 'true' : 'false'}</span>
+          <span>mapGuideCompleted: {guideDebug?.mapGuideCompleted ? 'true' : 'false'}</span>
+          <span>pickupGuideCompleted: {guideDebug?.pickupGuideCompleted ? 'true' : 'false'}</span>
+          <span>turnGuideCompleted: {guideDebug?.turnGuideCompleted ? 'true' : 'false'}</span>
+          <span>idle detected: {tracking.motion?.idleDetected || worldDebug.idleDetected ? 'true' : 'false'}</span>
+          <span>bending: {tracking.motion?.bending ? 'true' : 'false'}</span>
+          <span>hands up: {tracking.motion?.handsUp ? 'true' : 'false'}</span>
           <span>idle drift blocked: {tracking.motion?.idleDriftBlocked ? 'true' : 'false'}</span>
           <span>movement vector x/z: {formatVector(tracking.motion)}</span>
+          <span>avatarWorldX: {formatSpeed(worldDebug.avatarWorldX)}</span>
+          <span>avatarWorldZ: {formatSpeed(worldDebug.avatarWorldZ)}</span>
+          <span>player world x/z: {formatDebugPoint(worldDebug.playerWorldX, worldDebug.playerWorldZ)}</span>
+          <span>currentAreaId: {worldDebug.currentAreaId ?? currentAreaId}</span>
+          <span>currentHeading: {formatAngle(worldDebug.currentHeading ?? worldDebug.heading)}</span>
+          <span>local forward/lateral: {formatDebugPoint(worldDebug.localForward, worldDebug.localLateral)}</span>
+          <span>mapPlayerX: {formatSpeed(worldDebug.mapPlayerX)}</span>
+          <span>mapPlayerY: {formatSpeed(worldDebug.mapPlayerY)}</span>
+          <span>playerArrowRotation: {formatAngle(worldDebug.playerArrowRotation)}</span>
+          <span>nearestPartId: {worldDebug.nearestPartId ?? 'none'}</span>
+          <span>distanceToNearestPart: {formatSpeed(worldDebug.distanceToNearestPart)}</span>
+          <span>nearbyPartWorldX/Z: {formatDebugPoint(worldDebug.nearbyPartWorldX, worldDebug.nearbyPartWorldZ)}</span>
+          <span>playerPickupWorldX/Z: {formatDebugPoint(worldDebug.playerPickupWorldX, worldDebug.playerPickupWorldZ)}</span>
+          <span>playerMapX/Y: {formatDebugPoint(worldDebug.playerMapX, worldDebug.playerMapY)}</span>
+          <span>nearbyPartMapX/Y: {formatDebugPoint(worldDebug.nearbyPartMapX, worldDebug.nearbyPartMapY)}</span>
+          <span>distancePlayerToNearbyPartOnMap: {formatSpeed(worldDebug.distancePlayerToNearbyPartOnMap)}</span>
+          {(worldDebug.mapParts ?? []).map((part) => (
+            <span key={part.id}>
+              map part {part.id}: worldX {formatSpeed(part.worldX)} worldZ {formatSpeed(part.worldZ)} areaId {part.areaId} mapX {formatSpeed(part.mapX)} mapY {formatSpeed(part.mapY)}
+            </span>
+          ))}
           <span>player/world z: {formatSpeed(worldDebug.worldZ)}</span>
           <span>world scrolling: {worldDebug.scrolling ? 'true' : 'false'}</span>
           <span>movement speed: {formatSpeed(tracking.motion?.speed)}</span>
           <span>motion intensity: {formatSpeed(tracking.motion?.motionIntensity)}</span>
           <span>speed multiplier: {formatSpeed(tracking.motion?.speedMultiplier)}</span>
           <span>final speed: {formatSpeed(tracking.motion?.finalSpeed)}</span>
+          <span>tracking stable: {tracking.motion?.trackingStable || worldDebug.trackingStable ? 'true' : 'false'}</span>
           <span>smoothed speed: {formatSpeed(worldDebug.smoothedSpeed)}</span>
           <span>keyboard active: {worldDebug.keyboardActive ? 'true' : 'false'}</span>
           <span>keyboard forward: {formatSpeed(worldDebug.keyboardForward)}</span>
@@ -77,14 +125,42 @@ export function DebugPanel({
           <span>raw rightWrist.x: {formatSpeed(worldDebug.rawRightWristX)}</span>
           <span>left wrist delta x: {formatSpeed(worldDebug.leftWristDeltaX)}</span>
           <span>right wrist delta x: {formatSpeed(worldDebug.rightWristDeltaX)}</span>
+          <span>leftArmExtended: {worldDebug.leftArmExtended ? 'true' : 'false'}</span>
+          <span>rightArmExtended: {worldDebug.rightArmExtended ? 'true' : 'false'}</span>
+          <span>leftArmDetected: {worldDebug.leftArmDetected ? 'true' : 'false'}</span>
+          <span>rightArmDetected: {worldDebug.rightArmDetected ? 'true' : 'false'}</span>
+          <span>leftArmExtendedRaw: {worldDebug.leftArmExtendedRaw ? 'true' : 'false'}</span>
+          <span>rightArmExtendedRaw: {worldDebug.rightArmExtendedRaw ? 'true' : 'false'}</span>
+          <span>leftArmDistance: {formatSpeed(worldDebug.leftArmDistance)}</span>
+          <span>rightArmDistance: {formatSpeed(worldDebug.rightArmDistance)}</span>
+          <span>left shoulder x: {formatSpeed(worldDebug.leftShoulderX)}</span>
+          <span>left wrist minus shoulder: {formatSpeed(worldDebug.leftWristMinusShoulder)}</span>
+          <span>right shoulder x: {formatSpeed(worldDebug.rightShoulderX)}</span>
+          <span>right wrist minus shoulder: {formatSpeed(worldDebug.rightWristMinusShoulder)}</span>
+          <span>arm turn distance threshold: {formatSpeed(worldDebug.armTurnDistanceThreshold ?? worldDebug.armTurnTestThreshold)}</span>
+          <span>leftHoldMs: {formatMs(worldDebug.leftHoldMs)}</span>
+          <span>rightHoldMs: {formatMs(worldDebug.rightHoldMs)}</span>
+          <span>armsCrossed: {worldDebug.armsCrossedDisabled ? 'disabled' : worldDebug.armsCrossed ? 'true' : 'false'}</span>
+          <span>turnGestureCooldown: {((worldDebug.turnGestureCooldownMs ?? 0) / 1000).toFixed(1)}s</span>
+          <span>triggerBlockedReason: {worldDebug.triggerBlockedReason ?? 'ready'}</span>
+          <span>lastTurnGesture: {worldDebug.lastTurnGesture ?? 'none'}</span>
           <span>swipe left detected: {worldDebug.swipeLeftDetected ? 'true' : 'false'}</span>
           <span>swipe right detected: {worldDebug.swipeRightDetected ? 'true' : 'false'}</span>
           <span>gesture released: {worldDebug.armTurnReleased ? 'true' : 'false'}</span>
           <span>gesture trigger attempted: {worldDebug.armTurnTriggerAttempted ? 'true' : 'false'}</span>
           <span>gesture trigger accepted: {worldDebug.armTurnTriggerAccepted ? 'true' : 'false'}</span>
+          <span>gestureTriggerAttempted: {worldDebug.gestureTriggerAttempted ? 'true' : 'false'}</span>
+          <span>gestureTriggerAccepted: {worldDebug.gestureTriggerAccepted ? 'true' : 'false'}</span>
+          <span>turn gesture active: {tracking.motion?.turnGestureActive || worldDebug.turnGestureActive ? 'true' : 'false'}</span>
           <span>gesture blocked reason: {worldDebug.armTurnBlockedReason ?? 'ready'}</span>
           <span>gesture triggered: {worldDebug.armTurnTriggered || 'none'}</span>
           <span>arm turn cooldown: {(worldDebug.armTurnCooldownMs / 1000).toFixed(1)}s</span>
+          <span>arms crossed: {worldDebug.armsCrossedDisabled ? 'disabled' : worldDebug.armsCrossed ? 'true' : 'false'}</span>
+          <span>turn around cooldown: {((worldDebug.turnAroundCooldownMs ?? 0) / 1000).toFixed(1)}s</span>
+          <span>last turn trigger: {worldDebug.lastTurnAroundTrigger ?? 'none'}</span>
+          <span>turn source: {worldDebug.turnSource ?? 'none'}</span>
+          <span>heading before: {formatAngle(worldDebug.headingBefore)}</span>
+          <span>heading after: {formatAngle(worldDebug.headingAfter)}</span>
           <span>current heading: {formatAngle(worldDebug.heading)}</span>
           <span>effective avatar yaw: {formatAngle(worldDebug.effectiveAvatarYaw)}</span>
           <span>avatar facing angle: {formatAngle(worldDebug.facingAngle)}</span>
@@ -100,8 +176,41 @@ export function DebugPanel({
           <span>pose mirror x: {worldDebug.poseMirrorX}</span>
           <span>pose debug mode: {worldDebug.poseDebugMode ? 'true' : 'false'}</span>
           <span>nearby part: {pickupDebug.nearbyPart}</span>
+          <span>nearby part id: {pickupDebug.debug?.nearbyPartId ?? 'none'}</span>
+          <span>pickup area: {pickupDebug.debug?.currentAreaId ?? worldDebug.currentAreaId ?? currentAreaId}</span>
+          <span>avatar pickup x/z: {formatDebugPoint(pickupDebug.debug?.avatarSceneX, pickupDebug.debug?.avatarSceneZ)}</span>
+          <span>handlebar pickup x/z: {formatDebugPoint(pickupDebug.debug?.handlebarSceneX, pickupDebug.debug?.handlebarSceneZ)}</span>
+          <span>pickup distance: {formatNullableSpeed(pickupDebug.debug?.pickupDistance)}</span>
+          <span>handlebar distance: {formatNullableSpeed(pickupDebug.debug?.handlebarDistance)}</span>
+          <span>collected count: {formatCount(collectedCount)}</span>
+          <span>total parts: {formatCount(totalParts)}</span>
+          <span>is complete: {pickupDebug.isComplete ? 'true' : 'false'}</span>
+          <span>postcard visible: {postcardVisible ? 'true' : 'false'}</span>
+          <span>completion triggered: {completionTriggered ? 'true' : 'false'}</span>
           <span>hands low: {pickupDebug.handsLow ? 'true' : 'false'}</span>
           <span>pickup gesture: {pickupDebug.gestureState}</span>
+          <span>perf fps: {formatSpeed(perf.fps)}</span>
+          <span>perf frame ms: {formatMs(perf.avgFrameMs)}</span>
+          <span>perf meshes: {formatCount(perf.meshCount)}</span>
+          <span>perf draw calls: {formatCount(perf.drawCalls)}</span>
+          <span>perf visible objects: {formatCount(perf.visibleObjects)}</span>
+          <span>perf total objects: {formatCount(perf.totalObjects)}</span>
+          <span>perf render ms: {formatMs(perf.avgRenderMs)}</span>
+          <span>perf ambient loop ms: {formatMs(perf.avgAmbientMs)}</span>
+          <span>perf avatar loop ms: {formatMs(perf.avgAvatarMs)}</span>
+          <span>perf heading loop ms: {formatMs(perf.avgHeadingMs)}</span>
+          <span>perf world/camera ms: {formatMs(perf.avgWorldMs)}</span>
+          <span>perf pickup loop ms: {formatMs(perf.avgPickupMs)}</span>
+          <span>perf map/debug ms: {formatMs(perf.avgMapDebugMs)}</span>
+          <span>camera inside building: {worldDebug.occlusionCameraInsideBuilding ? 'true' : 'false'}</span>
+          <span>faded buildings: {formatCount(worldDebug.occlusionFadedCount)}</span>
+          <span>faded building ids: {formatList(worldDebug.occlusionFadedIds)}</span>
+          <span>occlusion mode: {worldDebug.occlusionMode ?? 'hide'}</span>
+          <span>MediaPipe active: {perf.mediaPipeActive ? 'true' : 'false'}</span>
+          <span>MediaPipe frame ms: {formatMs(perf.mediaPipeFrameMs)}</span>
+          <span>MediaPipe hand ms: {formatMs(perf.mediaPipeHandMs)}</span>
+          <span>MediaPipe pose ms: {formatMs(perf.mediaPipePoseMs)}</span>
+          <span>MediaPipe post ms: {formatMs(perf.mediaPipePostMs)}</span>
         </div>
 
         <div className="map-gesture-debug" aria-live="polite">
@@ -117,6 +226,30 @@ export function DebugPanel({
 
 function formatSpeed(speed) {
   return (speed ?? 0).toFixed(2)
+}
+
+function formatNullableSpeed(speed) {
+  return Number.isFinite(speed) ? speed.toFixed(2) : 'n/a'
+}
+
+function formatDebugPoint(x, z) {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) {
+    return 'n/a'
+  }
+
+  return `${x.toFixed(2)}, ${z.toFixed(2)}`
+}
+
+function formatMs(value) {
+  return `${formatSpeed(value)}ms`
+}
+
+function formatCount(value) {
+  return Math.round(value ?? 0).toString()
+}
+
+function formatList(value) {
+  return Array.isArray(value) && value.length > 0 ? value.join(', ') : 'none'
 }
 
 function formatPointXY(point) {

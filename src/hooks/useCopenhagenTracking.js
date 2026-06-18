@@ -10,16 +10,19 @@ import {
 } from '../handTracking'
 import { getHandGesture, movePuckWithGesture } from '../gestures'
 
-const WALKING_THRESHOLD = 0.28
-const MOTION_INTENSITY_DEADZONE = 0.055
-const KNEE_LIFT_THRESHOLD = 0.035
-const MOVEMENT_DIRECTION_INVERT = 1
-const MIN_WALK_SPEED = 0.07
-const MAX_WALK_SPEED = 0.18
-const MIN_SPEED_MULTIPLIER = 0.8
-const MAX_SPEED_MULTIPLIER = 2.9
+const WALK_THRESHOLD = 0.34
+const IDLE_DEADZONE = 0.04
+const MAX_WALK_SPEED = 0.28
+const SPEED_SMOOTHING = 0.18
+const BODY_LEAN_DEADZONE = 0.04
+const MAX_SIDE_SPEED = 0.22
+const SIDE_SPEED_SMOOTHING = 0.2
+const LEAN_AUTO_CALIBRATE_AFTER_MS = 1000
+const LEAN_AUTO_CALIBRATE_SMOOTHING = 0.018
+const IDLE_HOLD_MS = 260
+const MIN_WALK_SPEED = 0.08
+const KNEE_LIFT_THRESHOLD = 0.04
 const MOTION_INTENSITY_SCALE = 10.5
-const SPEED_SMOOTHING = 0.16
 
 export function useCopenhagenTracking({ playtestSettings } = {}) {
   const webcamRef = useRef(null)
@@ -30,7 +33,12 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
   const playtestSettingsRef = useRef(playtestSettings)
   const animationRef = useRef(0)
   const lastVideoTimeRef = useRef(-1)
-  const neutralPoseRef = useRef(null)
+  const bodyLeanRef = useRef({
+    autoCalibrating: false,
+    idleSince: 0,
+    neutralCenterX: null,
+    sideMovement: 0,
+  })
   const legMotionRef = useRef({
     lastLeftKneeY: null,
     lastRightKneeY: null,
@@ -47,22 +55,41 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
     swingEnergy: 0,
   })
   const motionIntensityRef = useRef({
+    ankleMotion: 0,
+    idleDetected: false,
+    idleSince: 0,
     intensity: 0,
     previous: null,
+    rawIntensity: 0,
     speedMultiplier: 0,
+    wristMotion: 0,
   })
-  const directionRef = useRef({ rawTurn: 0, x: 0, z: -1 })
   const smoothedMotionRef = useRef(READY_STATUS.motion)
   const smoothedReachRef = useRef(READY_STATUS.handReach)
+  const performanceRef = useRef(READY_STATUS.performance)
 
   const [isRunning, setIsRunning] = useState(false)
   const [tracking, setTracking] = useState(READY_STATUS)
+
+  function resetBodyLeanCenter() {
+    bodyLeanRef.current = {
+      autoCalibrating: false,
+      idleSince: 0,
+      neutralCenterX: null,
+      sideMovement: 0,
+    }
+  }
 
   function stopCamera() {
     cancelAnimationFrame(animationRef.current)
 
     animationRef.current = 0
     lastVideoTimeRef.current = -1
+    resetBodyLeanCenter()
+    performanceRef.current = {
+      ...performanceRef.current,
+      mediaPipeActive: false,
+    }
 
     clearCanvas(canvasRef.current)
     showSearchingPuck(puckRef.current)
@@ -84,32 +111,43 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
     resizeCanvasToVideo(canvas, video)
 
     if (hasNewVideoFrame(video, lastVideoTimeRef.current)) {
+      const frameStartedAt = performance.now()
       lastVideoTimeRef.current = video.currentTime
       const timestamp = performance.now()
+      const handStartedAt = performance.now()
       const results = handLandmarker.detectForVideo(video, timestamp)
+      const handMs = performance.now() - handStartedAt
+      const poseStartedAt = performance.now()
       const poseResults = poseLandmarker.detectForVideo(video, timestamp)
+      const poseMs = performance.now() - poseStartedAt
+      const postStartedAt = performance.now()
       const hands = createTrackedHands(results)
       const activeHand = chooseActiveHand(hands)
       const landmarks = activeHand?.landmarks
       const poseLandmarks = poseResults.landmarks?.[0]
       const poseTracking = updatePoseMotion(
         poseLandmarks,
-        neutralPoseRef,
+        bodyLeanRef,
         smoothedMotionRef,
         legMotionRef,
         armSwingRef,
-        motionIntensityRef,
-        directionRef
+        motionIntensityRef
       )
       // Hand smoothing tuning lives here; Playtest Settings can adjust it live.
       const handReach = updateHandReach(activeHand, smoothedReachRef, playtestSettingsRef.current)
+      const trackingPerformance = updateTrackingPerformance(performanceRef, {
+        frameMs: performance.now() - frameStartedAt,
+        handMs,
+        poseMs,
+        postMs: performance.now() - postStartedAt,
+      })
 
       if (landmarks) {
         drawTracking(canvas, results.landmarks, poseLandmarks)
         const gesture = getHandGesture(landmarks)
 
         movePuckWithGesture(gesture, puck)
-        setTracking(createTrackingStatus(results, gesture, poseLandmarks, poseTracking, hands, activeHand, handReach))
+        setTracking(createTrackingStatus(results, gesture, poseLandmarks, poseTracking, hands, activeHand, handReach, trackingPerformance))
       } else {
         if (poseLandmarks) {
           drawTracking(canvas, null, poseLandmarks)
@@ -117,7 +155,7 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
           clearCanvas(canvas)
         }
         showSearchingPuck(puck)
-        setTracking(createSearchingStatus(poseLandmarks, poseTracking, hands, handReach))
+        setTracking(createSearchingStatus(poseLandmarks, poseTracking, hands, handReach, trackingPerformance))
       }
     }
 
@@ -139,6 +177,7 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
       mode: 'loading',
       label: 'Loading model',
     })
+    resetBodyLeanCenter()
 
     try {
       if (!handLandmarkerRef.current) {
@@ -192,6 +231,7 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
     puckRef,
     startCamera,
     stopCamera,
+    resetBodyLeanCenter,
     tracking,
     webcamRef,
   }
@@ -214,7 +254,8 @@ function createSearchingStatus(
   poseLandmarks,
   poseTracking = createEmptyPoseTracking(),
   hands = createEmptyHands(),
-  handReach = READY_STATUS.handReach
+  handReach = READY_STATUS.handReach,
+  performance = READY_STATUS.performance
 ) {
   return {
     ...READY_STATUS,
@@ -228,10 +269,11 @@ function createSearchingStatus(
     bodyCenter: poseTracking.bodyCenter,
     pose: poseTracking.pose,
     motion: poseTracking.motion,
+    performance,
   }
 }
 
-function createTrackingStatus(results, gesture, poseLandmarks, poseTracking, hands, activeHand, handReach) {
+function createTrackingStatus(results, gesture, poseLandmarks, poseTracking, hands, activeHand, handReach, performance = READY_STATUS.performance) {
   const hand = activeHand?.summary ?? results.handednesses?.[0]?.[0]
 
   return {
@@ -248,8 +290,29 @@ function createTrackingStatus(results, gesture, poseLandmarks, poseTracking, han
     bodyCenter: poseTracking.bodyCenter,
     pose: poseTracking.pose,
     motion: poseTracking.motion,
+    performance,
     pinching: gesture.isPinching,
   }
+}
+
+function updateTrackingPerformance(performanceRef, sample) {
+  performanceRef.current = {
+    avgFrameMs: smoothPerformanceMetric(performanceRef.current.avgFrameMs, sample.frameMs),
+    avgHandMs: smoothPerformanceMetric(performanceRef.current.avgHandMs, sample.handMs),
+    avgPoseMs: smoothPerformanceMetric(performanceRef.current.avgPoseMs, sample.poseMs),
+    avgPostMs: smoothPerformanceMetric(performanceRef.current.avgPostMs, sample.postMs),
+    mediaPipeActive: true,
+  }
+
+  return performanceRef.current
+}
+
+function smoothPerformanceMetric(current, next, smoothing = 0.16) {
+  if (!Number.isFinite(current) || current === 0) {
+    return next
+  }
+
+  return current + (next - current) * smoothing
 }
 
 function createErrorStatus(label) {
@@ -270,12 +333,11 @@ function getCameraErrorLabel(error) {
 
 function updatePoseMotion(
   poseLandmarks,
-  neutralPoseRef,
+  bodyLeanRef,
   smoothedMotionRef,
   legMotionRef,
   armSwingRef,
-  motionIntensityRef,
-  directionRef
+  motionIntensityRef
 ) {
   if (!poseLandmarks) {
     return {
@@ -306,74 +368,101 @@ function updatePoseMotion(
 
   const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2
   const hipCenterX = leftHip && rightHip ? (leftHip.x + rightHip.x) / 2 : shoulderCenterX
-  const bodyCenterX = (shoulderCenterX + hipCenterX) / 2
-  const shoulderSpan = Math.abs(leftShoulder.x - rightShoulder.x)
+  const rawBodyCenterX = (shoulderCenterX + hipCenterX) / 2
+  const bodyCenterX = 1 - clamp(rawBodyCenterX, 0, 1)
 
-  if (!neutralPoseRef.current) {
-    neutralPoseRef.current = {
-      centerX: bodyCenterX,
-      shoulderSpan,
-    }
-  }
-
-  const neutral = neutralPoseRef.current
-  const rawLateral = clamp((neutral.centerX - bodyCenterX) * 4.4, -1, 1)
-  const leanForward = clamp(((shoulderSpan - neutral.shoulderSpan) / Math.max(neutral.shoulderSpan, 0.05)) * 3.2, -1, 1)
+  const handsUp = getHandsUpForMotion({ leftShoulder, leftWrist, rightShoulder, rightWrist })
+  const bending = getBendingForMotion({ leftHip, leftKnee, leftWrist, rightHip, rightKnee, rightWrist })
   const legMotion = getLegMotion({ leftAnkle, leftKnee, leftHip, rightAnkle, rightKnee, rightHip }, legMotionRef)
   const armMotion = getArmSwingMotion({ leftShoulder, leftWrist, rightShoulder, rightWrist }, armSwingRef)
   const motionIntensity = getMotionIntensity(
     { leftAnkle, leftElbow, leftKnee, leftWrist, rightAnkle, rightElbow, rightKnee, rightWrist },
     motionIntensityRef
   )
-  const bodyDirection = getBodyDirection(
-    { armSide: armMotion.sideDirection, leftHip, leftShoulder, rightHip, rightShoulder },
-    directionRef
-  )
-  const walkingConfidence = Math.max(legMotion.walkingConfidence, armMotion.armSwingConfidence)
-  const rawForward = clamp(Math.max(leanForward, walkingConfidence, legMotion.stride * 3.2), -1, 1)
-  const walking =
-    walkingConfidence >= WALKING_THRESHOLD &&
-    motionIntensity.intensity >= MOTION_INTENSITY_DEADZONE &&
+  const walkingSignal = Math.max(legMotion.walkingConfidence, armMotion.armSwingConfidence)
+  const hasSimpleWalkingPattern =
+    legMotion.alternating ||
+    legMotion.ankleMotion > 0.035 ||
+    armMotion.alternating ||
+    armMotion.armSwingConfidence > 0.45
+  const idleDetected =
+    motionIntensity.idleDetected ||
     (
-      legMotion.alternating ||
-      armMotion.alternating ||
-      legMotion.stride > KNEE_LIFT_THRESHOLD * 1.4
+      motionIntensity.intensity < IDLE_DEADZONE &&
+      legMotion.motionAmount < 0.08 &&
+      armMotion.wristMotion < 0.022 &&
+      motionIntensity.ankleMotion < 0.02
     )
+  const bodyLean = getBodyLeanSideMovement(bodyCenterX, bodyLeanRef, idleDetected)
+  const walkingConfidence = idleDetected || bending || handsUp ? 0 : walkingSignal
+  const walking =
+    !idleDetected &&
+    !bending &&
+    !handsUp &&
+    hasSimpleWalkingPattern &&
+    walkingConfidence >= WALK_THRESHOLD &&
+    motionIntensity.intensity >= IDLE_DEADZONE
+  const motionSpeedScore = clamp(
+    (motionIntensity.intensity - IDLE_DEADZONE) / Math.max(1 - IDLE_DEADZONE, 0.001),
+    0,
+    1,
+  )
   const activeSpeed = walking
     ? clamp(
-        (MIN_WALK_SPEED + walkingConfidence * 0.13) * motionIntensity.speedMultiplier,
+        MIN_WALK_SPEED + walkingConfidence * 0.08 + motionSpeedScore * 0.16,
         0,
-        MAX_WALK_SPEED * MAX_SPEED_MULTIPLIER
+        MAX_WALK_SPEED
       )
     : 0
+  const trackingStable = Boolean(
+    leftHip &&
+    rightHip &&
+    leftKnee &&
+    rightKnee &&
+    leftAnkle &&
+    rightAnkle &&
+    motionIntensity.rawIntensity < 0.75
+  )
 
   return {
     bodyCenter: {
       visible: true,
-      x: 1 - clamp(bodyCenterX, 0, 1),
+      x: bodyCenterX,
       y: clamp(((leftShoulder.y + rightShoulder.y) / 2 + (leftHip?.y ?? leftShoulder.y) + (rightHip?.y ?? rightShoulder.y)) / 4, 0, 1),
     },
     motion: smoothMotion(
       smoothedMotionRef,
       {
-        bodyDirection: bodyDirection.label,
+        bodyDirection: 'forward',
+        bodyCenterX,
+        bending,
         armSwingConfidence: armMotion.armSwingConfidence,
-        directionX: bodyDirection.x,
-        directionZ: bodyDirection.z,
-        finalDirectionX: bodyDirection.finalDirectionX,
-        forward: rawForward,
+        directionX: 0,
+        directionZ: -1,
+        finalDirectionX: 0,
+        forward: walking ? 1 : 0,
+        handsUp,
+        idleDetected,
         idleDriftBlocked: !walking && (walkingConfidence > 0.02 || motionIntensity.intensity > 0.015),
         kneeMotionAmount: legMotion.motionAmount,
         kneeWalkingConfidence: legMotion.walkingConfidence,
-        lateral: rawLateral,
+        lateral: bodyLean.sideMovement,
+        leanAmount: bodyLean.leanAmount,
+        leanLeft: bodyLean.leanLeft,
+        leanRight: bodyLean.leanRight,
+        autoCalibrating: bodyLean.autoCalibrating,
         leftKneeHeight: legMotion.leftKneeHeight,
         finalSpeed: activeSpeed,
-        motionIntensity: motionIntensity.intensity,
-        rawDirectionX: bodyDirection.rawDirectionX,
-        rawTurn: bodyDirection.finalDirectionX,
+        motionIntensity: idleDetected ? 0 : motionIntensity.intensity,
+        rawDirectionX: 0,
+        rawTurn: 0,
         rightKneeHeight: legMotion.rightKneeHeight,
+        neutralCenterX: bodyLean.neutralCenterX,
+        sideMovement: bodyLean.sideMovement,
         speed: activeSpeed,
         speedMultiplier: walking ? motionIntensity.speedMultiplier : 0,
+        trackingStable,
+        turnGestureActive: false,
         walkingConfidence,
         walking,
       },
@@ -534,25 +623,78 @@ function createEmptyPoseTracking() {
 
 function smoothMotion(ref, target, amount) {
   const current = ref.current ?? READY_STATUS.motion
+  if (target.idleDetected) {
+    const nextIdle = {
+      ...current,
+      bodyDirection: target.bodyDirection,
+      bodyCenterX: target.bodyCenterX,
+      armSwingConfidence: 0,
+      autoCalibrating: Boolean(target.autoCalibrating),
+      bending: Boolean(target.bending),
+      directionX: 0,
+      directionZ: -1,
+      finalDirectionX: 0,
+      finalSpeed: 0,
+      forward: 0,
+      handsUp: Boolean(target.handsUp),
+      idleDetected: true,
+      idleDriftBlocked: false,
+      kneeMotionAmount: 0,
+      kneeWalkingConfidence: 0,
+      lateral: target.lateral === 0 ? 0 : current.lateral + (target.lateral - current.lateral) * amount,
+      leanAmount: target.leanAmount,
+      leanLeft: Boolean(target.leanLeft),
+      leanRight: Boolean(target.leanRight),
+      leftKneeHeight: current.leftKneeHeight + (target.leftKneeHeight - current.leftKneeHeight) * amount,
+      motionIntensity: 0,
+      rawDirectionX: 0,
+      rawTurn: 0,
+      rightKneeHeight: current.rightKneeHeight + (target.rightKneeHeight - current.rightKneeHeight) * amount,
+      neutralCenterX: target.neutralCenterX,
+      sideMovement: target.sideMovement === 0 ? 0 : current.sideMovement + (target.sideMovement - current.sideMovement) * SIDE_SPEED_SMOOTHING,
+      speed: 0,
+      speedMultiplier: 0,
+      trackingStable: Boolean(target.trackingStable),
+      turnGestureActive: Boolean(target.turnGestureActive),
+      walkingConfidence: 0,
+      walking: false,
+    }
+
+    ref.current = nextIdle
+    return nextIdle
+  }
+
   const next = {
     bodyDirection: target.bodyDirection,
+    bodyCenterX: target.bodyCenterX,
     armSwingConfidence: current.armSwingConfidence + (target.armSwingConfidence - current.armSwingConfidence) * amount,
+    autoCalibrating: Boolean(target.autoCalibrating),
+    bending: Boolean(target.bending),
     directionX: current.directionX + (target.directionX - current.directionX) * amount,
     directionZ: current.directionZ + (target.directionZ - current.directionZ) * amount,
     finalDirectionX: current.finalDirectionX + (target.finalDirectionX - current.finalDirectionX) * amount,
     finalSpeed: target.walking ? current.finalSpeed + (target.finalSpeed - current.finalSpeed) * SPEED_SMOOTHING : 0,
     forward: current.forward + (target.forward - current.forward) * amount,
+    handsUp: Boolean(target.handsUp),
+    idleDetected: false,
     idleDriftBlocked: Boolean(target.idleDriftBlocked),
     kneeMotionAmount: current.kneeMotionAmount + (target.kneeMotionAmount - current.kneeMotionAmount) * amount,
     kneeWalkingConfidence: current.kneeWalkingConfidence + (target.kneeWalkingConfidence - current.kneeWalkingConfidence) * amount,
-    lateral: current.lateral + (target.lateral - current.lateral) * amount,
+    lateral: target.lateral === 0 ? 0 : current.lateral + (target.lateral - current.lateral) * amount,
+    leanAmount: target.leanAmount,
+    leanLeft: Boolean(target.leanLeft),
+    leanRight: Boolean(target.leanRight),
     leftKneeHeight: current.leftKneeHeight + (target.leftKneeHeight - current.leftKneeHeight) * amount,
     motionIntensity: current.motionIntensity + (target.motionIntensity - current.motionIntensity) * SPEED_SMOOTHING,
     rawDirectionX: current.rawDirectionX + (target.rawDirectionX - current.rawDirectionX) * amount,
     rawTurn: current.rawTurn + (target.rawTurn - current.rawTurn) * amount,
     rightKneeHeight: current.rightKneeHeight + (target.rightKneeHeight - current.rightKneeHeight) * amount,
+    neutralCenterX: target.neutralCenterX,
+    sideMovement: target.sideMovement === 0 ? 0 : current.sideMovement + (target.sideMovement - current.sideMovement) * SIDE_SPEED_SMOOTHING,
     speed: target.walking ? current.speed + (target.speed - current.speed) * SPEED_SMOOTHING : 0,
     speedMultiplier: target.walking ? current.speedMultiplier + (target.speedMultiplier - current.speedMultiplier) * SPEED_SMOOTHING : 0,
+    trackingStable: Boolean(target.trackingStable),
+    turnGestureActive: Boolean(target.turnGestureActive),
     walkingConfidence: current.walkingConfidence + (target.walkingConfidence - current.walkingConfidence) * amount,
     walking: target.walking,
   }
@@ -567,6 +709,85 @@ function getBodyLabel(motion) {
   }
 
   return 'Pose visible'
+}
+
+function getHandsUpForMotion({ leftShoulder, leftWrist, rightShoulder, rightWrist }) {
+  if (!leftShoulder || !rightShoulder || !leftWrist || !rightWrist) {
+    return false
+  }
+
+  const shoulderY = (leftShoulder.y + rightShoulder.y) / 2
+  const raisedThreshold = shoulderY - 0.08
+
+  return leftWrist.y < raisedThreshold && rightWrist.y < raisedThreshold
+}
+
+function getBendingForMotion({ leftHip, leftKnee, leftWrist, rightHip, rightKnee, rightWrist }) {
+  if (!leftHip || !rightHip || !leftWrist || !rightWrist) {
+    return false
+  }
+
+  const hipY = (leftHip.y + rightHip.y) / 2
+  const kneeY = leftKnee && rightKnee ? (leftKnee.y + rightKnee.y) / 2 : hipY + 0.16
+  const bendThreshold = Math.min(hipY + 0.08, hipY + (kneeY - hipY) * 0.52)
+
+  return leftWrist.y > bendThreshold && rightWrist.y > bendThreshold
+}
+
+function getBodyLeanSideMovement(bodyCenterX, bodyLeanRef, idleDetected) {
+  const state = bodyLeanRef.current ?? {
+    autoCalibrating: false,
+    idleSince: 0,
+    neutralCenterX: null,
+    sideMovement: 0,
+  }
+  const now = performance.now()
+
+  if (!Number.isFinite(state.neutralCenterX)) {
+    state.neutralCenterX = bodyCenterX
+  }
+
+  const initialLeanAmount = bodyCenterX - state.neutralCenterX
+  const initialLeanMagnitude = Math.abs(initialLeanAmount)
+  const smallIdleLean = idleDetected && initialLeanMagnitude <= BODY_LEAN_DEADZONE
+
+  if (idleDetected) {
+    state.idleSince ||= now
+  } else {
+    state.idleSince = 0
+  }
+
+  state.autoCalibrating = Boolean(
+    idleDetected &&
+    state.idleSince &&
+    now - state.idleSince >= LEAN_AUTO_CALIBRATE_AFTER_MS
+  )
+
+  if (state.autoCalibrating) {
+    state.neutralCenterX += (bodyCenterX - state.neutralCenterX) * LEAN_AUTO_CALIBRATE_SMOOTHING
+  }
+
+  const leanAmount = bodyCenterX - state.neutralCenterX
+  const leanMagnitude = Math.abs(leanAmount)
+  const leanDirection = Math.sign(leanAmount)
+  const leanStrength = smallIdleLean || leanMagnitude <= BODY_LEAN_DEADZONE
+    ? 0
+    : clamp((leanMagnitude - BODY_LEAN_DEADZONE) / (0.22 - BODY_LEAN_DEADZONE), 0, 1)
+  const targetSideMovement = leanDirection * leanStrength * MAX_SIDE_SPEED
+
+  state.sideMovement = targetSideMovement === 0
+    ? 0
+    : state.sideMovement + (targetSideMovement - state.sideMovement) * SIDE_SPEED_SMOOTHING
+  bodyLeanRef.current = state
+
+  return {
+    autoCalibrating: state.autoCalibrating,
+    leanAmount,
+    leanLeft: leanAmount < -BODY_LEAN_DEADZONE,
+    leanRight: leanAmount > BODY_LEAN_DEADZONE,
+    neutralCenterX: state.neutralCenterX,
+    sideMovement: state.sideMovement,
+  }
 }
 
 function getLegMotion({ leftAnkle, leftKnee, leftHip, rightAnkle, rightKnee, rightHip }, legMotionRef) {
@@ -634,7 +855,7 @@ function getLegMotion({ leftAnkle, leftKnee, leftHip, rightAnkle, rightKnee, rig
   )
 
   return {
-    alternating: state.stepEnergy > WALKING_THRESHOLD * 0.65,
+    alternating: state.stepEnergy > WALK_THRESHOLD * 0.65,
     leftKneeHeight,
     motionAmount: state.motionAmount,
     rightKneeHeight,
@@ -650,6 +871,7 @@ function getArmSwingMotion({ leftShoulder, leftWrist, rightShoulder, rightWrist 
       alternating: false,
       armSwingConfidence: 0,
       sideDirection: 0,
+      wristMotion: 0,
     }
   }
 
@@ -704,26 +926,38 @@ function getArmSwingMotion({ leftShoulder, leftWrist, rightShoulder, rightWrist 
   )
 
   return {
-    alternating: state.swingEnergy > WALKING_THRESHOLD * 0.7,
+    alternating: state.swingEnergy > WALK_THRESHOLD * 0.7,
     armSwingConfidence,
     sideDirection,
+    wristMotion: wristVelocity,
   }
 }
 
 function getMotionIntensity(landmarks, motionIntensityRef) {
   const entries = Object.entries(landmarks).filter(([, point]) => isValidLandmark(point))
   const previous = motionIntensityRef.current?.previous
+  const now = performance.now()
 
   if (!previous || entries.length === 0) {
     motionIntensityRef.current = {
+      ankleMotion: 0,
+      idleDetected: false,
+      idleSince: now,
       intensity: 0,
       previous: createMotionSnapshot(entries),
+      rawIntensity: 0,
       speedMultiplier: 0,
+      wristMotion: 0,
     }
 
     return motionIntensityRef.current
   }
 
+  const groupMotion = {
+    ankle: { count: 0, total: 0 },
+    knee: { count: 0, total: 0 },
+    wrist: { count: 0, total: 0 },
+  }
   let totalMotion = 0
   let count = 0
 
@@ -737,24 +971,57 @@ function getMotionIntensity(landmarks, motionIntensityRef) {
     const dx = point.x - before.x
     const dy = point.y - before.y
     const dz = (point.z ?? 0) - (before.z ?? 0)
+    const movement = Math.hypot(dx, dy, dz * 0.35)
 
-    totalMotion += Math.hypot(dx, dy, dz * 0.35)
+    totalMotion += movement
     count += 1
+    if (key.includes('Ankle')) {
+      groupMotion.ankle.total += movement
+      groupMotion.ankle.count += 1
+    } else if (key.includes('Knee')) {
+      groupMotion.knee.total += movement
+      groupMotion.knee.count += 1
+    } else if (key.includes('Wrist')) {
+      groupMotion.wrist.total += movement
+      groupMotion.wrist.count += 1
+    }
   }
 
   const rawIntensity = count > 0 ? clamp((totalMotion / count) * MOTION_INTENSITY_SCALE, 0, 1) : 0
-  const current = motionIntensityRef.current ?? { intensity: 0, previous: null, speedMultiplier: 0 }
+  const ankleMotion = groupMotion.ankle.count > 0 ? groupMotion.ankle.total / groupMotion.ankle.count : 0
+  const kneeMotion = groupMotion.knee.count > 0 ? groupMotion.knee.total / groupMotion.knee.count : 0
+  const wristMotion = groupMotion.wrist.count > 0 ? groupMotion.wrist.total / groupMotion.wrist.count : 0
+  const idleCandidate =
+    rawIntensity < IDLE_DEADZONE &&
+    ankleMotion < 0.006 &&
+    kneeMotion < 0.006 &&
+    wristMotion < 0.006
+  const current = motionIntensityRef.current ?? {
+    idleSince: 0,
+    intensity: 0,
+    previous: null,
+    speedMultiplier: 0,
+  }
+  const idleSince = idleCandidate
+    ? current.idleSince || now
+    : 0
+  const idleDetected = idleCandidate && now - idleSince >= IDLE_HOLD_MS
   const intensity = current.intensity + (rawIntensity - current.intensity) * SPEED_SMOOTHING
   const targetMultiplier =
-    intensity < 0.035
+    intensity < IDLE_DEADZONE
       ? 0
-      : MIN_SPEED_MULTIPLIER + intensity * (MAX_SPEED_MULTIPLIER - MIN_SPEED_MULTIPLIER)
+      : 1
   const speedMultiplier = current.speedMultiplier + (targetMultiplier - current.speedMultiplier) * SPEED_SMOOTHING
 
   motionIntensityRef.current = {
-    intensity,
+    ankleMotion,
+    idleDetected,
+    idleSince,
+    intensity: idleDetected ? 0 : intensity,
     previous: createMotionSnapshot(entries),
-    speedMultiplier: clamp(speedMultiplier, 0, MAX_SPEED_MULTIPLIER),
+    rawIntensity,
+    speedMultiplier: clamp(speedMultiplier, 0, 1),
+    wristMotion,
   }
 
   return motionIntensityRef.current
@@ -773,57 +1040,8 @@ function createMotionSnapshot(entries) {
   )
 }
 
-function getBodyDirection({ armSide, leftHip, leftShoulder, rightHip, rightShoulder }, directionRef) {
-  if (!leftShoulder || !rightShoulder) {
-    return {
-      label: 'forward',
-      finalDirectionX: 0,
-      rawDirectionX: 0,
-      x: 0,
-      z: -1,
-    }
-  }
-
-  const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2
-  const hipCenterX = leftHip && rightHip ? (leftHip.x + rightHip.x) / 2 : shoulderCenterX
-  const shoulderDepthTurn = (rightShoulder.z ?? 0) - (leftShoulder.z ?? 0)
-  const hipDepthTurn = leftHip && rightHip ? (rightHip.z ?? 0) - (leftHip.z ?? 0) : shoulderDepthTurn
-  const centerSkew = shoulderCenterX - hipCenterX
-  const rawDirectionX = clamp(shoulderDepthTurn * 3.9 + hipDepthTurn * 2.2 + centerSkew * 1.7 + armSide, -1, 1)
-  const finalDirectionX = clamp(rawDirectionX * MOVEMENT_DIRECTION_INVERT, -1, 1)
-  const state = directionRef.current ?? { rawTurn: 0, x: 0, z: -1 }
-  const deadZone = 0.18
-  const targetX = Math.abs(finalDirectionX) < deadZone ? 0 : finalDirectionX
-  const targetZ = -Math.max(0.28, 1 - Math.abs(targetX) * 0.72)
-
-  state.rawTurn += (finalDirectionX - state.rawTurn) * 0.18
-  state.x += (targetX - state.x) * 0.16
-  state.z += (targetZ - state.z) * 0.16
-  directionRef.current = state
-
-  return {
-    label: getDirectionLabel(state.x),
-    finalDirectionX,
-    rawDirectionX,
-    x: state.x,
-    z: state.z,
-  }
-}
-
 function isValidLandmark(point) {
   return Number.isFinite(point?.x) && Number.isFinite(point?.y)
-}
-
-function getDirectionLabel(directionX) {
-  if (directionX > 0.22) {
-    return 'right'
-  }
-
-  if (directionX < -0.22) {
-    return 'left'
-  }
-
-  return 'forward'
 }
 
 function clamp(value, min, max) {

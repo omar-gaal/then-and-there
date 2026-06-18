@@ -2,12 +2,10 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { BIKE_PARTS } from '../game/bikeParts'
-import { getPartMapPosition } from '../game/mapMarkers'
+import { partToMapMarker, playerToMapMarker } from '../game/mapMarkers'
 import {
   AVATAR_BASE_YAW,
   AVATAR_YAW_INFLUENCE,
-  BIKE_LANE_WIDTH,
-  BUILDING_X,
   INK,
   KEYBOARD_FORWARD_SPEED,
   KEYBOARD_MOVEMENT_SMOOTHING,
@@ -16,8 +14,6 @@ import {
   LEFT_STREET_ENTRANCE_Z,
   LEFT_STREET_HEADING,
   MAIN_STREET_HEADING,
-  MAP_LEFT_STREET,
-  MAP_MAIN_STREET,
   MEDIAPIPE_MOVEMENT_SMOOTHING,
   MEDIAPIPE_MOVE_SPEED_MULTIPLIER,
   PICKUP_ANIMATION_DURATION,
@@ -26,30 +22,77 @@ import {
   POSE_MIRROR_X,
   POSE_MIRROR_Y,
   POSE_MODE,
-  PROP_X,
   RETURN_FROM_LEFT_HEADING,
-  ROAD_WIDTH,
   SCREEN_LEFT_LOCAL_X,
   SCREEN_RIGHT_LOCAL_X,
-  SIDEWALK_WIDTH,
-  SIDEWALK_X,
   STREET_CENTER_Z,
   STREET_LENGTH,
   STREET_REPEAT,
 } from '../scene/constants'
 
-const ARM_TURN_SWIPE_THRESHOLD = 0.12
-const ARM_TURN_MAX_WINDOW_SECONDS = 0.7
-const ARM_TURN_MIN_SAMPLE_SECONDS = 0.05
-const ARM_TURN_COOLDOWN_SECONDS = 0.8
-const ARM_TURN_SETTLE_THRESHOLD = 0.05
-const ARM_TURN_SETTLE_SECONDS = 0.2
-export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, tracking }) {
+const TURN_AROUND_COOLDOWN_SECONDS = 1.2
+const ARM_TURN_DISTANCE_THRESHOLD = 0.12
+const ARM_TURN_HOLD_SECONDS = 0.35
+const ARM_TURN_COOLDOWN_SECONDS = 0.9
+const BUILDING_OCCLUSION_MODE = 'hide'
+const BUILDING_OCCLUSION_OPACITY = 0.08
+const PERFORMANCE_MODE = true
+const PERFORMANCE_STREET_DETAIL_Z = -68
+const VISUAL_ROAD_WIDTH = 5.6
+const VISUAL_SIDEWALK_WIDTH = 1.55
+const VISUAL_CURB_X = VISUAL_ROAD_WIDTH / 2 + 0.08
+const VISUAL_SIDEWALK_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH / 2
+const VISUAL_BUILDING_FACE_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH + 0.22
+const VISUAL_PROP_X = VISUAL_ROAD_WIDTH / 2 + 0.72
+const HOUSE_BLOCKS = [
+  { floors: 4, length: 2.35, shopKind: 'cafe', width: 1.35 },
+  { floors: 5, length: 1.7, width: 1.05 },
+  { floors: 3, length: 2.85, width: 1.55 },
+  { floors: 6, length: 1.95, width: 1.18 },
+  { floors: 4, length: 2.25, width: 1.32 },
+  { floors: 5, length: 1.55, width: 0.98 },
+  { floors: 4, length: 3.05, shopKind: 'flowers', width: 1.7 },
+  { floors: 6, length: 2.05, width: 1.2 },
+  { floors: 3, length: 2.55, width: 1.42 },
+  { floors: 5, length: 1.85, width: 1.08 },
+]
+export function ThreeStreetScene({
+  completionPhase = 'idle',
+  guideStep = 'hidden',
+  isMapOpen = false,
+  onMapData,
+  onPickupDebug,
+  onRecalibrateBodyLean,
+  onWorldDebug,
+  resetRunKey = 0,
+  tracking,
+}) {
+  const completionPhaseRef = useRef(completionPhase)
+  const guideStepRef = useRef(guideStep)
+  const isMapOpenRef = useRef(isMapOpen)
   const mountRef = useRef(null)
+  const resetRunKeyRef = useRef(resetRunKey)
   const trackingRef = useRef(tracking)
   const onMapDataRef = useRef(onMapData)
   const onPickupDebugRef = useRef(onPickupDebug)
+  const onRecalibrateBodyLeanRef = useRef(onRecalibrateBodyLean)
   const onWorldDebugRef = useRef(onWorldDebug)
+
+  useEffect(() => {
+    completionPhaseRef.current = completionPhase
+  }, [completionPhase])
+
+  useEffect(() => {
+    isMapOpenRef.current = isMapOpen
+  }, [isMapOpen])
+
+  useEffect(() => {
+    guideStepRef.current = guideStep
+  }, [guideStep])
+
+  useEffect(() => {
+    resetRunKeyRef.current = resetRunKey
+  }, [resetRunKey])
 
   useEffect(() => {
     trackingRef.current = tracking
@@ -64,6 +107,10 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
   }, [onPickupDebug])
 
   useEffect(() => {
+    onRecalibrateBodyLeanRef.current = onRecalibrateBodyLean
+  }, [onRecalibrateBodyLean])
+
+  useEffect(() => {
     onWorldDebugRef.current = onWorldDebug
   }, [onWorldDebug])
 
@@ -75,8 +122,8 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     }
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0xd7edf1)
-    scene.fog = new THREE.Fog(0xd7edf1, 42, 118)
+    scene.background = new THREE.Color(0xf3d8c8)
+    scene.fog = new THREE.Fog(0xf3d8c8, 34, 108)
 
     const camera = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 160)
     camera.position.set(0, 1.55, 8.8)
@@ -85,16 +132,16 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
-    renderer.shadowMap.enabled = true
+    renderer.shadowMap.enabled = !PERFORMANCE_MODE
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     mount.appendChild(renderer.domElement)
 
-    const ambient = new THREE.HemisphereLight(0xffffff, 0xf1d8bc, 2.7)
+    const ambient = new THREE.HemisphereLight(0xfff7ea, 0xd8c4ac, 2.9)
     scene.add(ambient)
 
-    const sun = new THREE.DirectionalLight(0xfff1d4, 2.2)
-    sun.position.set(-8, 12, 7)
-    sun.castShadow = true
+    const sun = new THREE.DirectionalLight(0xffe2bd, 1.85)
+    sun.position.set(-9, 10, 6)
+    sun.castShadow = !PERFORMANCE_MODE
     sun.shadow.mapSize.set(1536, 1536)
     sun.shadow.camera.left = -22
     sun.shadow.camera.right = 22
@@ -119,7 +166,7 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     buildLeftStreet(leftStreetA)
     buildLeftStreet(leftStreetB)
     leftStreetB.position.z = -STREET_REPEAT
-    leftStreet.add(leftStreetA, leftStreetB)
+      leftStreet.add(leftStreetA, leftStreetB)
     leftStreet.position.set(-5.4, 0, LEFT_STREET_ENTRANCE_Z)
     leftStreet.rotation.y = Math.PI * 0.5
     world.add(mainStreet, leftStreet)
@@ -127,6 +174,11 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     world.add(bikeParts.group)
     scene.add(world)
     const avatar = createPoseAvatar()
+    const ghostGuide = createGhostGuide()
+    const avatarInstruction = createAvatarInstructionDisplay()
+    const completionDisplay = createCompletionDisplay()
+    scene.add(avatarInstruction.group)
+    scene.add(completionDisplay.group)
     const avatarMotion = {
       facingAngle: AVATAR_BASE_YAW,
       currentAreaId: 'mainStreet',
@@ -145,13 +197,27 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
       armTurnTriggerAttempted: false,
       armTurnTriggered: '',
       armTurnTriggeredUntil: 0,
+      leftArmExtendedSince: null,
+      leftArmDistance: 0,
+      leftArmExtendedRaw: false,
+      leftHoldMs: 0,
       leftArmOut: false,
+      leftShoulderX: 0.5,
+      leftWristMinusShoulder: 0,
       leftWristDeltaX: 0,
       leftWristHistory: [],
+      lastTurnGesture: 'none',
+      lastTurnGestureUntil: 0,
       rawLeftWristX: 0.5,
       playerWorldX: 0,
       playerWorldZ: 0,
+      rightArmExtendedSince: null,
+      rightArmDistance: 0,
+      rightArmExtendedRaw: false,
+      rightHoldMs: 0,
       rightArmOut: false,
+      rightShoulderX: 0.5,
+      rightWristMinusShoulder: 0,
       rightWristDeltaX: 0,
       rightWristHistory: [],
       rawRightWristX: 0.5,
@@ -161,12 +227,21 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
       transitionLabel: '',
       transitionLabelUntil: 0,
       turnHint: '',
+      turnSource: 'none',
+      armsCrossed: false,
+      armsCrossedDisabled: true,
+      lastTurnAroundTrigger: 'none',
+      lastTurnAroundTriggerUntil: 0,
+      turnAroundCooldownMs: 0,
+      turnAroundCooldownUntil: 0,
       keyboardActive: false,
       keyboardForward: 0,
       keyboardMovementValue: 0,
       keyboardSide: 0,
       keyboardVx: 0,
       keyboardVz: 0,
+      headingAfter: MAIN_STREET_HEADING,
+      headingBefore: MAIN_STREET_HEADING,
       poseVx: 0,
       poseVz: 0,
       smoothedSpeed: 0,
@@ -185,14 +260,51 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
       lastDebugAt: 0,
       nearbyPartId: null,
     }
+    const completionState = {
+      activeKey: '',
+      animationStartAt: 0,
+      lastResetKey: resetRunKeyRef.current,
+    }
+    const occlusionState = {
+      active: new Set(),
+      debug: {
+        cameraInsideBuilding: false,
+        fadedCount: 0,
+        fadedIds: [],
+        mode: BUILDING_OCCLUSION_MODE,
+      },
+      raycaster: new THREE.Raycaster(),
+      targets: [],
+    }
     scene.add(avatar)
+    scene.add(ghostGuide)
     const animated = addAmbientDetails(scene)
+    const sceneStats = countSceneObjects(scene)
+    const perfState = {
+      avgAmbientMs: 0,
+      avgAvatarMs: 0,
+      avgFrameMs: 0,
+      avgHeadingMs: 0,
+      avgMapDebugMs: 0,
+      avgPickupMs: 0,
+      avgRenderMs: 0,
+      avgWorldMs: 0,
+      drawCalls: 0,
+      fps: 0,
+      lastFrameAt: performance.now(),
+      lastFpsAt: performance.now(),
+      meshCount: sceneStats.meshCount,
+      totalObjects: sceneStats.totalObjects,
+      visibleObjects: sceneStats.visibleObjects,
+      framesSinceFps: 0,
+    }
     const keys = {
       bend: false,
       forward: false,
       left: false,
       right: false,
       returnMain: false,
+      turnAround: false,
       turnLeft: false,
       turnRight: false,
     }
@@ -210,8 +322,27 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
     }
 
     function animate() {
-      const elapsed = (performance.now() - startedAt) / 1000
+      const frameStartedAt = performance.now()
+      const frameDelta = frameStartedAt - perfState.lastFrameAt
 
+      perfState.lastFrameAt = frameStartedAt
+      perfState.avgFrameMs = smoothMetric(perfState.avgFrameMs, frameDelta)
+      perfState.framesSinceFps += 1
+      if (frameStartedAt - perfState.lastFpsAt >= 500) {
+        perfState.fps = (perfState.framesSinceFps * 1000) / (frameStartedAt - perfState.lastFpsAt)
+        perfState.framesSinceFps = 0
+        perfState.lastFpsAt = frameStartedAt
+      }
+
+      const elapsed = (performance.now() - startedAt) / 1000
+      if (completionState.lastResetKey !== resetRunKeyRef.current) {
+        resetRunScene(bikeParts, completionDisplay, avatarMotion, pickupState, keys)
+        completionState.lastResetKey = resetRunKeyRef.current
+      }
+      const completionPhase = completionPhaseRef.current
+      const completionLocksGameplay = isCompletionLockingGameplay(completionPhase)
+
+      const ambientStartedAt = performance.now()
       for (let index = 0; index < animated.clouds.length; index += 1) {
         const cloud = animated.clouds[index]
 
@@ -227,20 +358,83 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
 
         tree.rotation.z = sway
       }
+      perfState.avgAmbientMs = smoothMetric(perfState.avgAmbientMs, performance.now() - ambientStartedAt)
 
-      updateAvatar(avatar, avatarMotion, trackingRef.current, elapsed, keys)
-      updateHeadingAndArea(avatarMotion, bikeParts, pickupState, keys, trackingRef.current, elapsed)
+      const avatarStartedAt = performance.now()
+      if (completionLocksGameplay) {
+        stopAvatarMotion(avatarMotion, keys)
+      }
+      updateAvatar(avatar, avatarMotion, completionLocksGameplay ? null : trackingRef.current, elapsed, keys)
+      updateCompletionAvatarPose(avatar, completionPhase, completionState, elapsed)
+      perfState.avgAvatarMs = smoothMetric(perfState.avgAvatarMs, performance.now() - avatarStartedAt)
+      const headingStartedAt = performance.now()
+      if (!completionLocksGameplay) {
+        updateHeadingAndArea(
+          avatarMotion,
+          bikeParts,
+          pickupState,
+          keys,
+          trackingRef.current,
+          elapsed,
+          onRecalibrateBodyLeanRef.current
+        )
+      }
+      perfState.avgHeadingMs = smoothMetric(perfState.avgHeadingMs, performance.now() - headingStartedAt)
+      const worldStartedAt = performance.now()
       updateWorldScroll(world, avatarMotion)
-      updateCameraFollow(camera, avatar, avatarMotion)
-      updateBikeParts(bikeParts, avatarMotion, avatar, trackingRef.current, keys, pickupState, onPickupDebugRef.current, elapsed)
+      if (completionLocksGameplay) {
+        updateCompletionCamera(camera, avatar, avatarMotion)
+      } else {
+        updateCameraFollow(camera, avatar, avatarMotion)
+      }
+      updateCameraOcclusionFading(scene, camera, avatar, occlusionState)
+      updateGuideScene(
+        ghostGuide,
+        avatarMotion,
+        guideStepRef.current,
+        elapsed,
+      )
+      updateCompletionDisplay(completionDisplay, avatar, avatarMotion, completionPhase, completionState, elapsed)
+      perfState.avgWorldMs = smoothMetric(perfState.avgWorldMs, performance.now() - worldStartedAt)
+      const pickupStartedAt = performance.now()
+      if (!completionLocksGameplay) {
+        updateBikeParts(bikeParts, avatarMotion, avatar, trackingRef.current, keys, pickupState, onPickupDebugRef.current, elapsed)
+      } else {
+        pickupState.nearbyPartId = null
+        pickupState.feedback = ''
+        publishPickupDebug(pickupState, onPickupDebugRef.current, false, null, bikeParts.parts, elapsed, true)
+      }
+      updateAvatarInstructionDisplay(
+        avatarInstruction,
+        avatar,
+        ghostGuide,
+        avatarMotion,
+        pickupState,
+        trackingRef.current,
+        isMapOpenRef.current,
+        guideStepRef.current,
+        completionPhase,
+      )
       updateBackpackGlow(avatar, elapsed)
+      perfState.avgPickupMs = smoothMetric(perfState.avgPickupMs, performance.now() - pickupStartedAt)
+      const mapDebugStartedAt = performance.now()
       publishMapData(avatarMotion, bikeParts.parts, onMapDataRef.current, elapsed)
-      publishWorldDebug(avatarMotion, onWorldDebugRef.current, elapsed)
+      publishWorldDebug(avatarMotion, onWorldDebugRef.current, elapsed, scene, renderer, perfState, trackingRef.current, occlusionState)
+      perfState.avgMapDebugMs = smoothMetric(perfState.avgMapDebugMs, performance.now() - mapDebugStartedAt)
+      const renderStartedAt = performance.now()
       renderer.render(scene, camera)
+      perfState.avgRenderMs = smoothMetric(perfState.avgRenderMs, performance.now() - renderStartedAt)
+      perfState.drawCalls = renderer.info.render.calls
       frameId = requestAnimationFrame(animate)
     }
 
     function handleKeyDown(event) {
+      if (event.code === 'KeyC' && !event.repeat) {
+        onRecalibrateBodyLeanRef.current?.()
+        event.preventDefault()
+        return
+      }
+
       if (setKeyState(event.code, keys, true)) {
         event.preventDefault()
       }
@@ -273,26 +467,33 @@ export function ThreeStreetScene({ onMapData, onPickupDebug, onWorldDebug, track
 
 function buildStreet(scene) {
   const road = new THREE.Mesh(
-    new THREE.BoxGeometry(ROAD_WIDTH, 0.08, STREET_LENGTH),
-    material(0x8f9690)
+    new THREE.BoxGeometry(VISUAL_ROAD_WIDTH, 0.08, STREET_LENGTH),
+    material(0xe8d8bf)
   )
   road.position.set(0, -0.04, STREET_CENTER_Z)
   road.receiveShadow = true
   addOutlined(scene, road, 0.012)
+  addPavingPattern(scene, VISUAL_ROAD_WIDTH * 0.94, STREET_LENGTH, 0, STREET_CENTER_Z, 0.018)
 
   for (const side of [-1, 1]) {
     const bikeLane = new THREE.Mesh(
-      new THREE.BoxGeometry(BIKE_LANE_WIDTH, 0.025, STREET_LENGTH),
-      material(0xa85f49)
+      new THREE.BoxGeometry(0.46, 0.025, STREET_LENGTH),
+      material(0xd9c5ad)
     )
+    const innerTrack = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, STREET_LENGTH), material(0xc8b08f))
+    const outerTrack = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.032, STREET_LENGTH), material(0xf5e5c9))
 
-    bikeLane.position.set(side * (ROAD_WIDTH / 2 - BIKE_LANE_WIDTH / 2 - 0.18), 0.025, STREET_CENTER_Z)
+    bikeLane.position.set(side * (VISUAL_ROAD_WIDTH / 2 - 0.42), 0.025, STREET_CENTER_Z)
+    innerTrack.position.set(side * (VISUAL_ROAD_WIDTH / 2 - 0.92), 0.034, STREET_CENTER_Z)
+    outerTrack.position.set(side * (VISUAL_ROAD_WIDTH / 2 - 0.12), 0.036, STREET_CENTER_Z)
     addOutlined(scene, bikeLane, 0.006)
+    addOutlined(scene, innerTrack, 0.003)
+    addOutlined(scene, outerTrack, 0.003)
   }
 
-  const laneMaterial = material(0xf6d56e)
+  const laneMaterial = material(0xf4ead8)
   for (let i = 0; i < 44; i += 1) {
-    const line = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.025, 1.25), laneMaterial)
+    const line = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.025, 0.72), laneMaterial)
 
     line.position.set(0, 0.025, 7.5 - i * 3.4)
     addOutlined(scene, line, 0.006)
@@ -303,6 +504,7 @@ function buildStreet(scene) {
     createBuildingRow(scene, side)
     createStreetProps(scene, side)
   }
+  addMainStreetTrees(scene)
 
   const farCrosswalk = createCrosswalk()
   farCrosswalk.position.z = -38
@@ -311,12 +513,16 @@ function buildStreet(scene) {
   const canal = createCanalHint()
   canal.position.set(-11.9, -0.02, -35)
   scene.add(canal)
+
+  const dome = createDistantDome()
+  dome.position.set(0, 0.05, -58)
+  scene.add(dome)
 }
 
 function addLeftStreetEntrance(scene) {
   const entrance = new THREE.Group()
-  const sideRoad = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.045, 8.4), material(0x8f9690))
-  const leftCurb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 8.2), material(0xd8d0c2))
+  const sideRoad = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.045, 8.4), material(0xe4d4bd))
+  const leftCurb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 8.2), material(0xd9cdbb))
   const rightCurb = leftCurb.clone()
   const sign = createStreetSign('Left Street')
   const planter = createPlanter()
@@ -335,9 +541,9 @@ function addLeftStreetEntrance(scene) {
   addTJunctionDetails(entrance)
   sign.position.set(-4.95, 0.34, -2.7)
   sign.rotation.y = -0.25
-  planter.position.set(-5.6, 0.14, 2.8)
-  lamp.position.set(-4.9, 0.05, 2.15)
-  bike.position.set(-5.8, 0.12, -2.1)
+  planter.position.set(-5.55, 0.14, 3.45)
+  lamp.position.set(-5.05, 0.05, 3.2)
+  bike.position.set(-6.75, 0.12, -3.25)
   bike.rotation.y = Math.PI * 0.5
   entrance.add(sign, planter, lamp, bike)
   entrance.position.z = LEFT_STREET_ENTRANCE_Z
@@ -345,32 +551,36 @@ function addLeftStreetEntrance(scene) {
 }
 
 function addTJunctionDetails(entrance) {
-  const apron = new THREE.Mesh(new THREE.BoxGeometry(6.3, 0.028, 6.2), material(0x8f9690))
-  const northCorner = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 1.2), material(0xf3eee4))
+  const apron = new THREE.Mesh(new THREE.BoxGeometry(6.3, 0.028, 6.2), material(0xe4d4bd))
+  const transition = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.03, 4.9), material(0xead9bf))
+  const northCorner = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.08, 1.05), material(0xf3eee4))
   const southCorner = northCorner.clone()
-  const bikeTurnA = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.032, 2.45), material(0xa85f49))
-  const bikeTurnB = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.032, 0.26), material(0xa85f49))
+  const bikeTurnA = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.032, 2.45), material(0xd9c5ad))
+  const bikeTurnB = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.032, 0.22), material(0xd9c5ad))
   const planterA = createPlanter()
   const planterB = createPlanter()
   const lampA = createLamp()
 
   apron.position.set(-4.85, 0.04, 0)
+  transition.position.set(-5.5, 0.062, 0)
+  transition.rotation.y = Math.PI * 0.5
   addOutlined(entrance, apron, 0.006)
-  northCorner.position.set(-5.35, 0.09, -3.15)
-  southCorner.position.set(-5.35, 0.09, 3.15)
+  addOutlined(entrance, transition, 0.004)
+  northCorner.position.set(-4.55, 0.09, -3.35)
+  southCorner.position.set(-4.55, 0.09, 3.35)
   addOutlined(entrance, northCorner, 0.006)
   addOutlined(entrance, southCorner, 0.006)
 
-  for (let i = -2; i <= 2; i += 1) {
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.032, 3.2), material(0xf7f5ed))
+  for (let i = -1; i <= 1; i += 1) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.032, 2.65), material(0xf7f5ed))
 
-    stripe.position.set(-2.15 + i * 0.58, 0.07, -3.05)
+    stripe.position.set(-2.28 + i * 0.7, 0.07, -3.05)
     stripe.rotation.y = Math.PI * 0.5
     addOutlined(entrance, stripe, 0.003)
   }
 
-  for (let i = -2; i <= 2; i += 1) {
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.032, 2.4), material(0xf7f5ed))
+  for (let i = -1; i <= 1; i += 1) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.032, 2.2), material(0xf7f5ed))
 
     stripe.position.set(-5.85, 0.07, i * 0.52)
     addOutlined(entrance, stripe, 0.003)
@@ -380,9 +590,9 @@ function addTJunctionDetails(entrance) {
   bikeTurnB.position.set(-5.05, 0.078, 2.1)
   addOutlined(entrance, bikeTurnA, 0.004)
   addOutlined(entrance, bikeTurnB, 0.004)
-  planterA.position.set(-4.85, 0.16, -3.8)
-  planterB.position.set(-4.85, 0.16, 3.8)
-  lampA.position.set(-4.35, 0.05, -3.75)
+  planterA.position.set(-4.35, 0.16, -3.85)
+  planterB.position.set(-4.35, 0.16, 3.85)
+  lampA.position.set(-3.95, 0.05, -3.55)
   entrance.add(planterA, planterB, lampA)
 }
 
@@ -391,12 +601,13 @@ function buildLeftStreet(scene) {
   const sideStreetCenterZ = STREET_CENTER_Z
   const road = new THREE.Mesh(
     new THREE.BoxGeometry(sideRoadWidth, 0.08, STREET_LENGTH),
-    material(0x8d938d)
+    material(0xe4d4bd)
   )
 
   road.position.set(0, -0.04, sideStreetCenterZ)
   road.receiveShadow = true
   addOutlined(scene, road, 0.012)
+  addPavingPattern(scene, sideRoadWidth * 0.9, STREET_LENGTH, 0, sideStreetCenterZ, 0.018)
 
   for (const side of [-1, 1]) {
     const sidewalk = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.14, STREET_LENGTH), material(0xf3eee4))
@@ -407,7 +618,11 @@ function buildLeftStreet(scene) {
     addOutlined(scene, sidewalk, 0.01)
     addOutlined(scene, curb, 0.008)
 
-    for (let i = 0; i < 26; i += 1) {
+    const leftStreetBuildingCount = PERFORMANCE_MODE ? 9 : 26
+    const leftStreetPropCount = PERFORMANCE_MODE ? 3 : 18
+    const leftStreetLampCount = PERFORMANCE_MODE ? 3 : 12
+
+    for (let i = 0; i < leftStreetBuildingCount; i += 1) {
       const buildingZ = 7.5 - i * 4.8
 
       if (buildingZ > -8) {
@@ -416,34 +631,31 @@ function buildLeftStreet(scene) {
 
       const building = createBuilding({
         depth: 1.2 + (i % 2) * 0.18,
-        height: 2.8 + (i % 4) * 0.32,
+        height: 3.8 + (i % 4) * 0.34,
         index: i + 2,
         side,
         width: 1.05 + (i % 3) * 0.14,
       })
 
-      building.position.set(side * (5.25 + (i % 2) * 0.16), (2.8 + (i % 4) * 0.32) / 2, buildingZ)
+      building.position.set(side * (5.1 + (i % 2) * 0.16), (3.8 + (i % 4) * 0.34) / 2, buildingZ)
       building.rotation.y = side * 0.025
       scene.add(building)
     }
 
-    for (let i = 0; i < 18; i += 1) {
+    for (let i = 0; i < leftStreetPropCount; i += 1) {
       const propZ = 5.8 - i * 5.8
 
       if (propZ > -7) {
         continue
       }
 
-      const bike = createParkedBike(i + 5)
       const planter = createPlanter()
 
-      bike.position.set(side * 3.35, 0.12, propZ)
-      bike.rotation.y = side * Math.PI * 0.5
       planter.position.set(side * 4.05, 0.14, propZ - 1.7)
-      scene.add(bike, planter)
+      scene.add(planter)
     }
 
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < leftStreetLampCount; i += 1) {
       const lampZ = 7.2 - i * 8.2
 
       if (lampZ > -7) {
@@ -468,149 +680,257 @@ function buildLeftStreet(scene) {
 
 function createSidewalk(scene, side) {
   const sidewalk = new THREE.Mesh(
-    new THREE.BoxGeometry(SIDEWALK_WIDTH, 0.14, STREET_LENGTH),
-    material(0xf3eee4)
+    new THREE.BoxGeometry(VISUAL_SIDEWALK_WIDTH, 0.14, STREET_LENGTH),
+    material(0xf0e5d2)
   )
-  sidewalk.position.set(side * SIDEWALK_X, 0.02, STREET_CENTER_Z)
+  sidewalk.position.set(side * VISUAL_SIDEWALK_X, 0.02, STREET_CENTER_Z)
   sidewalk.receiveShadow = true
   addOutlined(scene, sidewalk, 0.01)
 
   const curb = new THREE.Mesh(
     new THREE.BoxGeometry(0.18, 0.18, STREET_LENGTH),
-    material(0xd8d0c2)
+    material(0xd5c7b4)
   )
-  curb.position.set(side * (ROAD_WIDTH / 2 + 0.08), 0.08, STREET_CENTER_Z)
+  curb.position.set(side * VISUAL_CURB_X, 0.08, STREET_CENTER_Z)
   addOutlined(scene, curb, 0.008)
 
-  for (let i = 0; i < 32; i += 1) {
-    const seam = new THREE.Mesh(new THREE.BoxGeometry(SIDEWALK_WIDTH * 0.92, 0.012, 0.035), material(0xd8d0c2))
+  const sidewalkSeamCount = PERFORMANCE_MODE ? 12 : 32
+  const sidewalkStoneRows = PERFORMANCE_MODE ? 1 : 2
+  const sidewalkStoneCount = PERFORMANCE_MODE ? 8 : 24
 
-    seam.position.set(side * SIDEWALK_X, 0.105, 8 - i * 4.8)
+  for (let i = 0; i < sidewalkSeamCount; i += 1) {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(VISUAL_SIDEWALK_WIDTH * 0.92, 0.012, 0.035), material(0xd7cab8))
+
+    seam.position.set(side * VISUAL_SIDEWALK_X, 0.105, 8 - i * (PERFORMANCE_MODE ? 12.4 : 4.8))
     scene.add(seam)
   }
 
-  for (let row = 0; row < 3; row += 1) {
-    for (let i = 0; i < 24; i += 1) {
-      const stone = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.014, 0.035), material(0xded7cb))
+  for (let row = 0; row < sidewalkStoneRows; row += 1) {
+    for (let i = 0; i < sidewalkStoneCount; i += 1) {
+      const stone = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.014, 0.035), material(0xe7dcc9))
 
-      stone.position.set(side * (SIDEWALK_X - 0.86 + row * 0.52), 0.112, 6.2 - i * 6.4 - row * 0.8)
+      stone.position.set(side * (VISUAL_SIDEWALK_X - 0.42 + row * 0.52), 0.112, 6.2 - i * (PERFORMANCE_MODE ? 17 : 6.4) - row * 0.8)
       scene.add(stone)
     }
   }
 }
 
 function createBuildingRow(scene, side) {
-  for (let i = 0; i < 30; i += 1) {
-    const height = 3.1 + (i % 5) * 0.46
-    const width = 1.18 + (i % 4) * 0.24
-    const depth = 1.45 + (i % 3) * 0.35
-    const building = createBuilding({ depth, height, index: i, side, width })
+  let zCursor = 8.45
+  let i = 0
 
-    building.position.set(side * (BUILDING_X + (i % 2) * 0.34), height / 2, 7.5 - i * 4.45)
-    building.rotation.y = side * (0.04 + (i % 3) * 0.014)
+  const farLimit = PERFORMANCE_MODE ? PERFORMANCE_STREET_DETAIL_Z : -STREET_LENGTH + 12
+
+  while (zCursor > farLimit) {
+    const block = HOUSE_BLOCKS[i % HOUSE_BLOCKS.length]
+    const depth = block.length + ((i + side + 20) % 3) * 0.08
+    const width = block.width + ((i + 1) % 3) * 0.04
+    const height = 2.75 + block.floors * 0.58 + (i % 5 === 0 ? 0.28 : 0)
+    const shopKind = side < 0 && i % HOUSE_BLOCKS.length === 0
+      ? 'cafe'
+      : side > 0 && i % HOUSE_BLOCKS.length === 6
+        ? 'flowers'
+        : ''
+    const buildingZ = zCursor - depth / 2
+
+    if (isLeftStreetOpening(side, buildingZ, depth)) {
+      zCursor -= depth + 0.035
+      i += 1
+      continue
+    }
+
+    const building = createBuilding({ depth, height, index: i, shopKind, side, width })
+
+    building.position.set(side * (VISUAL_BUILDING_FACE_X + width / 2), height / 2, buildingZ)
+    building.rotation.y = side * (0.008 + (i % 3) * 0.004)
     scene.add(building)
+    zCursor -= depth + 0.035
+    i += 1
   }
 }
 
+function isLeftStreetOpening(side, buildingZ, depth) {
+  return side < 0 && Math.abs(buildingZ - LEFT_STREET_ENTRANCE_Z) < 4.6 + depth / 2
+}
+
 function createStreetProps(scene, side) {
-  for (let i = 0; i < 24; i += 1) {
-    const tree = createTree()
+  const lampCount = PERFORMANCE_MODE ? 5 : 18
+  const benchCount = PERFORMANCE_MODE ? 0 : 5
+  const planterCount = PERFORMANCE_MODE ? 3 : 12
+  const rackCount = PERFORMANCE_MODE ? 0 : 8
+  const cafeSetCount = PERFORMANCE_MODE ? 0 : 4
 
-    tree.position.set(side * (PROP_X + 0.55 + (i % 2) * 0.3), 0.12, 6.2 - i * 5.8)
-    scene.add(tree)
-  }
-
-  for (let i = 0; i < 22; i += 1) {
+  for (let i = 0; i < lampCount; i += 1) {
     const lamp = createLamp()
 
-    lamp.position.set(side * (PROP_X - 0.18), 0.05, 8.4 - i * 6.4)
+    lamp.position.set(side * (VISUAL_PROP_X - 0.08), 0.05, 7.2 - i * 6.8)
+    lamp.scale.setScalar(0.9)
     scene.add(lamp)
   }
 
-  for (let i = 0; i < 13; i += 1) {
+  for (let i = 0; i < benchCount; i += 1) {
     const bench = createBench()
 
-    bench.position.set(side * (PROP_X + 1.25), 0.2, 4.2 - i * 8.4)
+    bench.position.set(side * (VISUAL_PROP_X + 0.65), 0.2, -10.8 - i * 18.4)
     bench.rotation.y = side * Math.PI * 0.5
     scene.add(bench)
   }
 
-  for (let i = 0; i < 24; i += 1) {
+  for (let i = 0; i < planterCount; i += 1) {
     const planter = createPlanter()
 
-    planter.position.set(side * (PROP_X + 1 + (i % 2) * 0.24), 0.14, 7.6 - i * 4.45)
+    planter.position.set(side * (VISUAL_PROP_X + 0.55 + (i % 2) * 0.12), 0.14, 6.6 - i * 8.2)
     scene.add(planter)
   }
 
-  for (let i = 0; i < 20; i += 1) {
-    const bike = createParkedBike(i)
+  addLandmarkBikes(scene, side)
 
-    bike.position.set(side * (PROP_X + 0.3 + (i % 2) * 0.42), 0.12, 6.8 - i * 5.2)
-    bike.rotation.y = side * Math.PI * 0.5
-    scene.add(bike)
-  }
-
-  for (let i = 0; i < 11; i += 1) {
+  for (let i = 0; i < rackCount; i += 1) {
     const rack = createBikeRack()
 
-    rack.position.set(side * (PROP_X + 0.7), 0.06, 3.2 - i * 9.6)
+    rack.position.set(side * (VISUAL_PROP_X + 0.48), 0.06, 3.2 - i * 12.6)
     rack.rotation.y = side * Math.PI * 0.5
     scene.add(rack)
   }
 
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < cafeSetCount; i += 1) {
     const cafe = createCafeSet(i)
 
-    cafe.position.set(side * (PROP_X + 1.36), 0.08, 1.2 - i * 14.5)
+    cafe.position.set(side * (VISUAL_PROP_X + 0.7), 0.08, -16.2 - i * 20.5)
     cafe.rotation.y = side * Math.PI * 0.5
     scene.add(cafe)
   }
+
+  if (side < 0) {
+    const cafe = createCafeStreetMoment()
+
+    cafe.position.set(side * (VISUAL_PROP_X + 0.5), 0.05, 3.9)
+    cafe.rotation.y = side * Math.PI * 0.5
+    scene.add(cafe)
+  } else {
+    const flowers = createFlowerShopStreetMoment()
+
+    flowers.position.set(side * (VISUAL_PROP_X + 0.54), 0.05, -0.2)
+    flowers.rotation.y = side * Math.PI * 0.5
+    scene.add(flowers)
+  }
+
+  if (side > 0) {
+    const postbox = createPostbox()
+
+    postbox.position.set(side * (VISUAL_PROP_X + 0.34), 0.05, -4.9)
+    scene.add(postbox)
+  }
 }
 
-function createBuilding({ depth, height, index, side, width }) {
+function addMainStreetTrees(scene) {
+  const treePositions = [
+    { side: -1, z: 2.4, scale: 0.78 },
+    { side: 1, z: -1.8, scale: 0.78 },
+    { side: -1, z: -34, scale: 0.72 },
+  ]
+
+  for (const { side, z, scale } of treePositions) {
+    const tree = createTree()
+
+    tree.position.set(side * (VISUAL_PROP_X + 0.42), 0.12, z)
+    tree.scale.setScalar(scale)
+    scene.add(tree)
+  }
+}
+
+function addLandmarkBikes(scene, side) {
+  const bikePositions = side < 0
+    ? [
+        { index: 0, z: 3.2, xOffset: 0.44 },
+        { index: 8, z: -46, xOffset: 0.5 },
+      ]
+    : [
+        { index: 1, z: -1.2, xOffset: 0.42 },
+      ]
+
+  for (const bikePosition of bikePositions) {
+    const bike = createParkedBike(bikePosition.index)
+
+    bike.position.set(side * (VISUAL_PROP_X + bikePosition.xOffset), 0.12, bikePosition.z)
+    bike.rotation.y = side * Math.PI * 0.5
+    scene.add(bike)
+  }
+}
+
+function createBuilding({ depth, height, index, shopKind = '', side, width }) {
   const group = new THREE.Group()
-  const colors = [0xf0a35f, 0xf4d35e, 0x72c6b1, 0x9bd0df, 0xe9959d, 0xd86f54, 0xf3ead4, 0xb85d4f]
-  const brickColors = [0xb75f4c, 0xc9795d, 0x9f5748]
-  const bodyColor = index % 5 === 2 ? brickColors[index % brickColors.length] : colors[index % colors.length]
+  const isNearBuilding = !PERFORMANCE_MODE || index < 8 || Boolean(shopKind)
+  const colors = [0x8ba7ca, 0xeac77c, 0x86a889, 0xc86f58, 0xf1e5ce, 0xe0a982, 0xa7b6c8, 0xd7a2bb]
+  const brickColors = [0xb96958, 0xc98267, 0xa65f53]
+  const bodyColor = shopKind === 'cafe'
+    ? 0x8ba7ca
+    : shopKind === 'flowers'
+      ? 0xeac77c
+      : index % 5 === 2
+        ? brickColors[index % brickColors.length]
+        : colors[index % colors.length]
   const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material(bodyColor))
 
-  body.castShadow = true
+  body.castShadow = !PERFORMANCE_MODE || index < 8
   body.receiveShadow = true
   addOutlined(group, body, 0.015)
 
-  if (index % 5 === 2) {
+  if (isNearBuilding && index % 5 === 2) {
     addBrickLines(group, width, height, depth)
   }
+  if (isNearBuilding) {
+    addFacadeTexture(group, width, height, depth, bodyColor, index)
+  }
 
-  const roofColor = index % 3 === 0 ? 0x3f4a4b : index % 3 === 1 ? 0x5a3838 : 0x657170
-  const roof = createGableRoof(width * 1.16, depth * 1.12, 0.72, roofColor)
+  const roofColor = shopKind === 'cafe' ? 0x594238 : index % 3 === 0 ? 0x334047 : index % 3 === 1 ? 0x67423a : 0x596665
+  const roof = createGableRoof(width * 1.18, depth * 1.08, 0.72 + (index % 4) * 0.08, roofColor)
 
   roof.position.y = height / 2 + 0.02
-  roof.castShadow = true
+  roof.castShadow = !PERFORMANCE_MODE || index < 8
   group.add(roof)
 
-  const windowRows = Math.max(2, Math.floor(height / 0.72))
-  for (let row = 0; row < windowRows; row += 1) {
+  const windowRows = PERFORMANCE_MODE
+    ? Math.max(2, Math.floor(height / 1.25))
+    : Math.max(4, Math.floor(height / 0.72))
+  const windowStep = PERFORMANCE_MODE ? 2 : 1
+  for (let row = 0; row < windowRows; row += windowStep) {
     for (let col = -1; col <= 1; col += 2) {
-      const windowPane = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.48, 0.035), material(0xf4fbfb))
+      const recess = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.56, 0.032), material(row % 3 === 0 ? 0xd8c8b8 : 0xe7d7c4))
+      const windowPane = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.45, 0.035), material(row % 4 === 0 ? 0x4b5658 : 0xf8f3e8))
+      const mullionV = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.45, 0.05), material(0xffffff))
+      const mullionH = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.025, 0.052), material(0xffffff))
 
-      windowPane.position.set((col * width) / 4, -height / 2 + 0.7 + row * 0.62, depth / 2 + 0.018)
-      addOutlined(group, windowPane, 0.006)
+      recess.position.set((col * width) / 4, -height / 2 + 0.76 + row * 0.62, depth / 2 + 0.016)
+      windowPane.position.set(recess.position.x, recess.position.y, depth / 2 + 0.04)
+      mullionV?.position.copy(windowPane.position).setZ(depth / 2 + 0.064)
+      mullionH?.position.copy(windowPane.position).setZ(depth / 2 + 0.066)
+      addOutlined(group, recess, 0.004)
+      addOutlined(group, windowPane, 0.004)
+      if (!PERFORMANCE_MODE && row % 4 !== 0) {
+        group.add(mullionV, mullionH)
+      }
 
       const sill = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.035, 0.055), material(0xf8f0e2))
 
       sill.position.set(windowPane.position.x, windowPane.position.y - 0.29, depth / 2 + 0.04)
       addOutlined(group, sill, 0.004)
+      if (!PERFORMANCE_MODE && (row + index) % 4 === 1) {
+        const flowerBox = createFlowerBox()
+
+        flowerBox.position.set(windowPane.position.x, windowPane.position.y - 0.34, depth / 2 + 0.075)
+        group.add(flowerBox)
+      }
     }
   }
 
-  const shop = new THREE.Mesh(new THREE.BoxGeometry(width * 0.78, 0.52, 0.055), material(0xfff7eb))
+  const shop = new THREE.Mesh(new THREE.BoxGeometry(width * 0.78, 0.52, 0.055), material(0xf9edd9))
   const awning = new THREE.Mesh(
     new THREE.BoxGeometry(width * 0.88, 0.09, 0.36),
-    material(index % 2 === 0 ? 0xe8796d : 0xf4d269)
+    material(index % 2 === 0 ? 0xc96f63 : 0xe2c66f)
   )
-  const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.22, 0.48, 0.075), material(0x78aeb0))
-  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.18, 0.07), material(index % 3 === 0 ? 0x76d5cb : 0xf7c560))
+  const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.22, 0.48, 0.075), material(0x68909a))
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.18, 0.07), material(index % 3 === 0 ? 0x7aa39d : 0xe3bd6f))
   const shopMark = index % 2 === 0
     ? new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.017, 8, 18), material(0x8d5a3d))
     : new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.12, 12), material(0xf1b86b))
@@ -621,18 +941,34 @@ function createBuilding({ depth, height, index, side, width }) {
   sign.position.set(-side * width * 0.16, -height / 2 + 1.02, depth / 2 + 0.09)
   shopMark.position.set(sign.position.x, sign.position.y, depth / 2 + 0.135)
   shopMark.rotation.x = Math.PI * 0.5
-  addOutlined(group, shop, 0.006)
-  addOutlined(group, awning, 0.008)
-  addOutlined(group, door, 0.006)
-  addOutlined(group, sign, 0.006)
-  addOutlined(group, shopMark, 0.004)
+  if (!PERFORMANCE_MODE || shopKind || index < 4) {
+    addOutlined(group, shop, 0.006)
+    addOutlined(group, awning, 0.008)
+    addOutlined(group, door, 0.006)
+    addOutlined(group, sign, 0.006)
+    addOutlined(group, shopMark, 0.004)
+  } else {
+    group.add(shop, awning, door, sign)
+  }
 
-  for (let i = -1; i <= 1; i += 2) {
+  if (shopKind) {
+    const frontage = shopKind === 'cafe'
+      ? createCafeBuildingFrontage(width, height, depth)
+      : createFlowerBuildingFrontage(width, height, depth)
+
+    group.add(frontage)
+  }
+
+  group.add(createStreetFacingFacade({ depth, height, index, shopKind, side, width }))
+
+  if (!PERFORMANCE_MODE || shopKind) for (let i = -1; i <= 1; i += 2) {
     const box = createFlowerBox()
 
     box.position.set((i * width) / 4, -height / 2 + 1.35, depth / 2 + 0.07)
     group.add(box)
   }
+
+  markCameraOccluder(group, `building-${shopKind || 'row'}-${index}-${side}`)
 
   return group
 }
@@ -640,12 +976,12 @@ function createBuilding({ depth, height, index, side, width }) {
 function createPoseAvatar() {
   const group = new THREE.Group()
   const skin = material(0xffc59e)
-  const coat = material(0x2f80ed)
-  const accent = material(0xf6d56e)
-  const backpackMaterial = material(0xf0a35f)
+  const coat = material(0x6f8faa)
+  const accent = material(0xd8bd6d)
+  const backpackMaterial = material(0xd79a6f)
   const dark = material(0x26302f)
-  const screenLeftHand = material(0x76d5cb)
-  const screenRightHand = material(0xf09ab1)
+  const screenLeftHand = material(0x8aaea8)
+  const screenRightHand = material(0xd89aa7)
 
   group.userData.parts = {
     head: new THREE.Mesh(new THREE.SphereGeometry(0.18, 18, 12), skin),
@@ -669,11 +1005,222 @@ function createPoseAvatar() {
     addAvatarOutlined(group, part, 0.012)
   }
 
-  group.userData.parts.backpack.userData.baseColor = new THREE.Color(0xf0a35f)
+  group.userData.parts.backpack.userData.baseColor = new THREE.Color(0xd79a6f)
   group.userData.parts.backpack.userData.glowColor = new THREE.Color(0xffedb7)
   group.scale.setScalar(1.15)
 
   return group
+}
+
+function createGhostGuide() {
+  const group = new THREE.Group()
+  const ghostMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    opacity: 0.68,
+    transparent: true,
+  })
+  const accentMaterial = new THREE.MeshBasicMaterial({
+    color: 0xd8fff7,
+    opacity: 0.78,
+    transparent: true,
+  })
+
+  group.userData.parts = {
+    head: new THREE.Mesh(new THREE.SphereGeometry(0.15, 18, 12), ghostMaterial),
+    torso: createAvatarLimb(0.08, ghostMaterial),
+    leftUpperArm: createAvatarLimb(0.032, accentMaterial),
+    leftLowerArm: createAvatarLimb(0.028, accentMaterial),
+    rightUpperArm: createAvatarLimb(0.032, accentMaterial),
+    rightLowerArm: createAvatarLimb(0.028, accentMaterial),
+    leftHand: new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 8), accentMaterial),
+    rightHand: new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 8), accentMaterial),
+    leftLeg: createAvatarLimb(0.035, ghostMaterial),
+    rightLeg: createAvatarLimb(0.035, ghostMaterial),
+  }
+
+  for (const part of Object.values(group.userData.parts)) {
+    group.add(part)
+  }
+
+  group.scale.setScalar(1.2)
+  group.visible = false
+
+  return group
+}
+
+function createAvatarInstructionDisplay() {
+  const group = new THREE.Group()
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    depthTest: false,
+    opacity: 0,
+    transparent: true,
+  }))
+
+  sprite.renderOrder = 20
+  sprite.scale.set(7.1, 2.18, 1)
+  group.add(sprite)
+  group.visible = false
+
+  return {
+    group,
+    lastText: '',
+    sprite,
+  }
+}
+
+function updateAvatarInstructionDisplay(
+  display,
+  avatar,
+  ghostGuide,
+  motionState,
+  pickupState,
+  tracking,
+  isMapOpen,
+  guideStep,
+  completionPhase,
+) {
+  if (!display?.sprite || completionPhase === 'postcard') {
+    if (display?.group) {
+      display.group.visible = false
+    }
+    return
+  }
+
+  const feedback = getAvatarInstructionFeedback({
+    guideStep,
+    isMapOpen,
+    motionState,
+    pickupState,
+    tracking,
+  })
+  if (!feedback) {
+    display.group.visible = false
+    display.sprite.material.opacity += (0 - display.sprite.material.opacity) * 0.22
+    return
+  }
+
+  const textKey = `${feedback.action}|${feedback.instruction}`
+  const target = guideStep && guideStep !== 'hidden' && ghostGuide?.visible ? ghostGuide : avatar
+
+  display.group.visible = true
+  display.group.position.copy(target.position).add(new THREE.Vector3(0, 2.72, 0))
+  display.sprite.material.opacity += (0.96 - display.sprite.material.opacity) * 0.18
+  if (display.lastText === textKey) {
+    return
+  }
+
+  display.lastText = textKey
+  display.sprite.material.map?.dispose()
+  display.sprite.material.map = createInstructionBubbleTexture(feedback.instruction)
+  display.sprite.material.needsUpdate = true
+}
+
+function getAvatarInstructionFeedback({ guideStep }) {
+  return getGuideInstructionFeedback(guideStep)
+}
+
+function getGuideInstructionFeedback(guideStep) {
+  if (guideStep === 'walk') {
+    return {
+      action: 'Guide',
+      instruction: 'MOVE ARMS + LEGS TO WALK',
+    }
+  }
+
+  if (guideStep === 'left') {
+    return {
+      action: 'Guide',
+      instruction: 'MOVE BODY LEFT',
+    }
+  }
+
+  if (guideStep === 'right') {
+    return {
+      action: 'Guide',
+      instruction: 'MOVE BODY RIGHT',
+    }
+  }
+
+  if (guideStep === 'pickup') {
+    return {
+      action: 'Guide',
+      instruction: 'BEND DOWN TO PICK UP',
+    }
+  }
+
+  if (guideStep === 'map') {
+    return {
+      action: 'Guide',
+      instruction: 'RAISE BOTH HANDS FOR MAP',
+    }
+  }
+
+  if (guideStep === 'turn') {
+    return {
+      action: 'Guide',
+      instruction: 'STRETCH ARM TO TURN\nLEFT ARM = LEFT, RIGHT ARM = RIGHT',
+    }
+  }
+
+  return null
+}
+
+function createInstructionBubbleTexture(instruction) {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+
+  canvas.width = 1600
+  canvas.height = 520
+  if (!context) {
+    return null
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+
+  const lines = instruction.split('\n')
+  const maxTextWidth = canvas.width - 240
+  const primarySize = lines.length > 1 ? 94 : 112
+  const secondarySize = 62
+  const startY = lines.length > 1 ? 200 : 260
+  const lineGap = lines.length > 1 ? 118 : 0
+
+  context.shadowColor = 'rgba(25, 28, 28, 0.72)'
+  context.shadowBlur = 28
+  context.shadowOffsetY = 10
+
+  lines.forEach((line, index) => {
+    const baseFontSize = index === 0 ? primarySize : secondarySize
+    const fontSize = getFittedInstructionFontSize(context, line, baseFontSize, maxTextWidth)
+    const y = startY + index * lineGap
+
+    context.font = `950 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`
+    context.lineWidth = index === 0 ? 22 : 14
+    context.strokeStyle = 'rgba(22, 28, 27, 0.88)'
+    context.strokeText(line, canvas.width / 2, y)
+    context.fillStyle = index === 0 ? '#fff8df' : '#ffffff'
+    context.fillText(line, canvas.width / 2, y)
+  })
+
+  const texture = new THREE.CanvasTexture(canvas)
+
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
+function getFittedInstructionFontSize(context, text, fontSize, maxWidth) {
+  let nextSize = fontSize
+
+  while (nextSize > 42) {
+    context.font = `950 ${nextSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`
+    if (context.measureText(text).width <= maxWidth) {
+      return nextSize
+    }
+    nextSize -= 4
+  }
+
+  return nextSize
 }
 
 function createBikeParts() {
@@ -692,10 +1239,59 @@ function createBikeParts() {
       collected: false,
       halo,
       mesh,
+      originalAreaId: definition.areaId ?? 'mainStreet',
+      originalX: definition.x,
+      originalZ: definition.z,
     }
   })
 
   return { group, parts, pickupAnimations: [] }
+}
+
+function createCompletionDisplay() {
+  const group = new THREE.Group()
+  const sparkleGroup = new THREE.Group()
+  const assemblyParts = [
+    createAssemblyPart('frame', createFramePart(), new THREE.Vector3(0, 0.78, 0)),
+    createAssemblyPart('rearWheel', createWheelPart(), new THREE.Vector3(-0.64, 0.36, 0)),
+    createAssemblyPart('frontWheel', createWheelPart(), new THREE.Vector3(0.68, 0.36, 0)),
+    createAssemblyPart('handlebar', createHandlebarPart(), new THREE.Vector3(0.9, 0.92, 0)),
+    createAssemblyPart('saddle', createSaddlePart(), new THREE.Vector3(-0.16, 0.98, 0)),
+  ]
+
+  for (const part of assemblyParts) {
+    part.mesh.visible = false
+    group.add(part.mesh)
+  }
+
+  for (let index = 0; index < 10; index += 1) {
+    const sparkle = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025 + (index % 3) * 0.008, 8, 6),
+      new THREE.MeshBasicMaterial({ color: index % 2 === 0 ? 0xffedb7 : 0xffffff }),
+    )
+
+    sparkle.userData.angle = index * 0.72
+    sparkle.userData.radius = 0.52 + (index % 4) * 0.12
+    sparkleGroup.add(sparkle)
+  }
+
+  group.add(sparkleGroup)
+  group.visible = false
+  group.scale.setScalar(1.28)
+
+  return {
+    assemblyParts,
+    group,
+    sparkleGroup,
+  }
+}
+
+function createAssemblyPart(id, mesh, target) {
+  return {
+    id,
+    mesh,
+    target,
+  }
 }
 
 function createBikePart(kind) {
@@ -717,7 +1313,7 @@ function createBikePart(kind) {
 function createWheelPart() {
   const group = new THREE.Group()
   const tire = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 10, 28), material(0x26302f))
-  const hub = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), material(0xf6d56e))
+  const hub = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), material(0xd8bd6d))
 
   tire.rotation.y = Math.PI * 0.5
   addOutlined(group, tire, 0.006)
@@ -737,7 +1333,7 @@ function createHandlebarPart() {
   const group = new THREE.Group()
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.055, 0.055), material(0x53605e))
   const stem = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.055), material(0x53605e))
-  const leftGrip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.07, 0.07), material(0xf0a35f))
+  const leftGrip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.07, 0.07), material(0xd79a6f))
   const rightGrip = leftGrip.clone()
 
   stem.position.y = -0.22
@@ -754,7 +1350,7 @@ function createHandlebarPart() {
 
 function createFramePart() {
   const group = new THREE.Group()
-  const frameMaterial = material(0x2f80ed)
+  const frameMaterial = material(0x6f8faa)
   const points = [
     [new THREE.Vector3(-0.42, -0.22, 0), new THREE.Vector3(-0.05, 0.35, 0)],
     [new THREE.Vector3(-0.05, 0.35, 0), new THREE.Vector3(0.45, -0.22, 0)],
@@ -841,6 +1437,127 @@ function createStreetSignText(label) {
   return sprite
 }
 
+function createPaintedText(label, color, width, height) {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+
+  canvas.width = 256
+  canvas.height = 96
+  if (!context) {
+    return new THREE.Sprite(new THREE.SpriteMaterial({ color }))
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = `#${new THREE.Color(color).getHexString()}`
+  context.font = '800 34px Georgia, Times New Roman, serif'
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+  context.fillText(label, 128, 48)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+  }))
+
+  sprite.scale.set(width, height, 1)
+
+  return sprite
+}
+
+function createStreetFacingFacade({ depth, height, index, shopKind, side, width }) {
+  const group = new THREE.Group()
+  const isNearBuilding = !PERFORMANCE_MODE || index < 8 || Boolean(shopKind)
+  const faceX = -side * (width / 2 + 0.028)
+  const signX = -side * (width / 2 + 0.064)
+  const zColumns = PERFORMANCE_MODE ? 2 : Math.max(2, Math.min(4, Math.round(depth / 0.72)))
+  const rows = PERFORMANCE_MODE ? Math.max(2, Math.floor(height / 1.25)) : Math.max(4, Math.floor(height / 0.7))
+  const shopBand = new THREE.Mesh(
+    new THREE.BoxGeometry(0.055, 0.68, depth * 0.86),
+    material(shopKind === 'cafe' ? 0x4a342b : shopKind === 'flowers' ? 0x42633d : 0xf1dfc5),
+  )
+  const shopSign = shopKind
+    ? new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.23, depth * 0.72), material(shopKind === 'cafe' ? 0x5a3f31 : 0x315d38))
+    : null
+  const shopText = shopKind
+    ? createPaintedText(shopKind === 'cafe' ? 'COFFEE' : 'BLOMSTER', 0xfff1d6, depth * 0.54, 0.18)
+    : null
+
+  shopBand.position.set(faceX, -height / 2 + 0.4, 0)
+  addOutlined(group, shopBand, 0.004)
+
+  if (shopSign && shopText) {
+    shopSign.position.set(signX, -height / 2 + 0.93, 0)
+    shopText.position.set(signX - side * 0.035, -height / 2 + 0.93, 0)
+    shopText.rotation.y = side * Math.PI * 0.5
+    addOutlined(group, shopSign, 0.004)
+    group.add(shopText)
+  }
+
+  if (shopKind) {
+    const awning = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.12, depth * 0.78),
+      material(shopKind === 'cafe' ? 0xe7c879 : 0xaebf82),
+    )
+
+    awning.position.set(faceX - side * 0.11, -height / 2 + 0.78, 0)
+    addOutlined(group, awning, 0.004)
+  }
+
+  for (let row = 0; row < rows; row += 1) {
+    const y = -height / 2 + 1.35 + row * 0.58
+
+    if (y > height / 2 - 0.18) {
+      continue
+    }
+
+    for (let col = 0; col < zColumns; col += 1) {
+      const z = -depth * 0.35 + col * ((depth * 0.7) / Math.max(1, zColumns - 1))
+      const darkInterior = (row + col + index) % 5 === 0
+      const recess = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.48, 0.27), material(0xd8c8b8))
+      const pane = new THREE.Mesh(
+        new THREE.BoxGeometry(0.045, 0.38, 0.19),
+        material(darkInterior ? 0x454a48 : 0xf8f1e5),
+      )
+      const mullionV = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.38, 0.018), material(0xffffff))
+      const mullionH = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.018, 0.19), material(0xffffff))
+
+      recess.position.set(faceX, y, z)
+      pane.position.set(faceX - side * 0.022, y, z)
+      mullionV?.position.set(faceX - side * 0.05, y, z)
+      mullionH?.position.set(faceX - side * 0.052, y, z)
+      addOutlined(group, recess, 0.003)
+      addOutlined(group, pane, 0.003)
+      if (!PERFORMANCE_MODE && !darkInterior) {
+        group.add(mullionV, mullionH)
+      }
+
+      if (!PERFORMANCE_MODE && (row + col + index) % 6 === 2) {
+        const box = createFlowerBox()
+
+        box.position.set(faceX - side * 0.06, y - 0.29, z)
+        box.rotation.y = side * Math.PI * 0.5
+        group.add(box)
+      }
+    }
+  }
+
+  if ((isNearBuilding && index % 3 === 0) || shopKind) {
+    const dormerCount = PERFORMANCE_MODE ? 1 : Math.min(2, zColumns)
+
+    for (let col = 0; col < dormerCount; col += 1) {
+      const dormer = createDormerWindow()
+      const z = -depth * 0.24 + col * depth * 0.38
+
+      dormer.position.set(faceX - side * 0.12, height / 2 + 0.38, z)
+      dormer.rotation.y = side * Math.PI * 0.5
+      group.add(dormer)
+    }
+  }
+
+  return group
+}
+
 function createTubeBetween(start, end, radius, tubeMaterial) {
   const direction = end.clone().sub(start)
   const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, direction.length(), 10), tubeMaterial)
@@ -870,15 +1587,171 @@ function addAvatarOutlined(parent, mesh, thickness) {
   parent.add(mesh)
 }
 
+function markCameraOccluder(object, id) {
+  object.userData.isBuildingOccluder = true
+  object.userData.fadeWhenBlockingCamera = true
+  object.userData.cameraOccluderRoot = object
+  object.userData.cameraOccluderId = id
+  object.traverse?.((child) => {
+    if (child.isMesh) {
+      child.userData.fadeWhenBlockingCamera = true
+      child.userData.cameraOccluderRoot = object
+      child.userData.cameraOccluderId = id
+      storeOriginalMaterialSettings(child)
+    }
+  })
+}
+
+function storeOriginalMaterialSettings(mesh) {
+  if (mesh.userData.cameraOcclusionOriginalVisible === undefined) {
+    mesh.userData.cameraOcclusionOriginalVisible = mesh.visible
+  }
+
+  for (const meshMaterial of getMeshMaterials(mesh)) {
+    if (!meshMaterial.userData.cameraOcclusionOriginal) {
+      meshMaterial.userData.cameraOcclusionOriginal = {
+        depthWrite: meshMaterial.depthWrite,
+        opacity: meshMaterial.opacity,
+        transparent: meshMaterial.transparent,
+      }
+    }
+  }
+}
+
+function updateCameraOcclusionFading(scene, camera, avatar, occlusionState) {
+  const cameraPosition = camera.getWorldPosition(new THREE.Vector3())
+  const avatarTarget = avatar.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.95, 0))
+  const viewVector = avatarTarget.clone().sub(cameraPosition)
+  const viewDistance = viewVector.length()
+  const roots = new Set()
+
+  scene.traverse((child) => {
+    if (child.userData.isBuildingOccluder) {
+      roots.add(child)
+    }
+  })
+
+  const blockingRoots = new Set()
+  let cameraInsideBuilding = false
+
+  for (const root of roots) {
+    const blockState = getBuildingOcclusionState(root, cameraPosition, viewVector, viewDistance)
+
+    if (blockState.blocksView) {
+      blockingRoots.add(root)
+    }
+    cameraInsideBuilding = cameraInsideBuilding || blockState.cameraInside
+  }
+
+  for (const root of blockingRoots) {
+    applyBuildingOcclusion(root, true)
+  }
+  occlusionState.active = restoreInactiveOccluders(occlusionState, blockingRoots)
+  updateOcclusionDebug(occlusionState, cameraInsideBuilding)
+}
+
+function getBuildingOcclusionState(root, cameraPosition, viewVector, viewDistance) {
+  const box = new THREE.Box3().setFromObject(root).expandByScalar(0.12)
+
+  if (box.isEmpty() || viewDistance <= 0.01) {
+    return {
+      blocksView: false,
+      cameraInside: false,
+    }
+  }
+
+  const cameraInside = box.containsPoint(cameraPosition)
+  if (cameraInside) {
+    return {
+      blocksView: true,
+      cameraInside: true,
+    }
+  }
+
+  const direction = viewVector.clone().normalize()
+  const ray = new THREE.Ray(cameraPosition, direction)
+  const hit = ray.intersectBox(box, new THREE.Vector3())
+
+  if (!hit) {
+    return {
+      blocksView: false,
+      cameraInside: false,
+    }
+  }
+
+  return {
+    blocksView: hit.distanceTo(cameraPosition) <= viewDistance,
+    cameraInside: false,
+  }
+}
+
+function restoreInactiveOccluders(occlusionState, blockingRoots) {
+  const nextActive = new Set(blockingRoots)
+
+  for (const root of occlusionState.active) {
+    if (!blockingRoots.has(root)) {
+      applyBuildingOcclusion(root, false)
+    }
+  }
+
+  return nextActive
+}
+
+function applyBuildingOcclusion(root, shouldOcclude) {
+  root.traverse((child) => {
+    if (!child.isMesh || !child.userData.fadeWhenBlockingCamera) {
+      return
+    }
+
+    child.visible = shouldOcclude && BUILDING_OCCLUSION_MODE === 'hide'
+      ? false
+      : child.userData.cameraOcclusionOriginalVisible
+
+    for (const meshMaterial of getMeshMaterials(child)) {
+      const original = meshMaterial.userData.cameraOcclusionOriginal
+
+      if (!original) {
+        continue
+      }
+
+      if (shouldOcclude) {
+        meshMaterial.transparent = true
+        meshMaterial.opacity = BUILDING_OCCLUSION_OPACITY
+        meshMaterial.depthWrite = false
+      } else {
+        meshMaterial.opacity = original.opacity
+        meshMaterial.transparent = original.transparent
+        meshMaterial.depthWrite = original.depthWrite
+      }
+    }
+  })
+}
+
+function updateOcclusionDebug(occlusionState, cameraInsideBuilding) {
+  const fadedRoots = [...occlusionState.active]
+
+  occlusionState.debug = {
+    cameraInsideBuilding,
+    fadedCount: fadedRoots.length,
+    fadedIds: fadedRoots.map((root) => root.userData.cameraOccluderId ?? root.uuid).slice(0, 8),
+    mode: BUILDING_OCCLUSION_MODE,
+  }
+}
+
+function getMeshMaterials(mesh) {
+  return Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+}
+
 function updateAvatar(avatar, motionState, tracking, elapsed, keys) {
   const pose = tracking?.pose
   const motion = tracking?.motion ?? { lateral: 0, speed: 0, walking: false }
   const bodyVisible = Boolean(tracking?.bodyCenter?.visible && pose?.leftShoulder && pose?.rightShoulder)
   const targetSpeed = bodyVisible && motion.walking ? (motion.speed ?? 0.05) * MEDIAPIPE_MOVE_SPEED_MULTIPLIER : 0
+  const targetSideSpeed = bodyVisible ? (motion.sideMovement ?? motion.lateral ?? 0) * MEDIAPIPE_MOVE_SPEED_MULTIPLIER : 0
   const keyboardX = Number(keys.right) - Number(keys.left)
   const keyboardZ = -Number(keys.forward)
   const keyboardActive = keyboardX !== 0 || keyboardZ !== 0
-  const poseVx = (motion.directionX ?? 0) * targetSpeed
+  const poseVx = targetSideSpeed
   const poseVz = (motion.directionZ ?? -1) * targetSpeed
   const keyboardTargetVx = keyboardX * KEYBOARD_SIDE_SPEED
   const keyboardTargetVz = keyboardZ * KEYBOARD_FORWARD_SPEED
@@ -989,6 +1862,284 @@ function updateCameraFollow(camera, avatar, motionState) {
   camera.lookAt(target)
 }
 
+function isCompletionLockingGameplay(completionPhase) {
+  return completionPhase === 'postcard'
+}
+
+function stopAvatarMotion(motionState, keys) {
+  keys.forward = false
+  keys.left = false
+  keys.right = false
+  keys.bend = false
+  keys.turnLeft = false
+  keys.turnRight = false
+  keys.turnAround = false
+  motionState.poseVx = 0
+  motionState.poseVz = 0
+  motionState.keyboardVx = 0
+  motionState.keyboardVz = 0
+  motionState.vx = 0
+  motionState.vz = 0
+  motionState.smoothedSpeed *= 0.82
+  motionState.scrolling = false
+}
+
+function updateCompletionCamera(camera, avatar, motionState) {
+  const forward = forwardVectorFromHeading(motionState.currentHeading)
+  const right = rightVectorFromHeading(motionState.currentHeading)
+  const target = avatar.position.clone()
+    .add(new THREE.Vector3(0, 1.05, 0))
+    .add(forward.clone().multiplyScalar(1.8))
+    .add(right.clone().multiplyScalar(0.75))
+  const desiredPosition = avatar.position.clone()
+    .add(forward.clone().multiplyScalar(-5.9))
+    .add(right.clone().multiplyScalar(1.35))
+    .add(new THREE.Vector3(0, 1.72, 0))
+
+  camera.position.lerp(desiredPosition, 0.035)
+  camera.lookAt(target)
+}
+
+function updateCompletionDisplay(display, avatar, motionState, completionPhase, completionState, elapsed) {
+  void avatar
+  void motionState
+  void elapsed
+  display.group.visible = false
+  completionState.activeKey = completionPhase === 'idle' ? '' : completionPhase
+}
+
+function resetCompletionAssembly(display) {
+  for (const part of display.assemblyParts) {
+    part.mesh.visible = false
+    part.mesh.scale.setScalar(0.25)
+  }
+}
+
+function updateCompletionAvatarPose(avatar, completionPhase, completionState, elapsed) {
+  if (completionPhase !== 'celebrating' && completionPhase !== 'postcard') {
+    avatar.position.y += (0 - avatar.position.y) * 0.18
+    return
+  }
+
+  if (completionState.activeKey !== completionPhase) {
+    completionState.activeKey = completionPhase
+    completionState.animationStartAt = elapsed
+  }
+
+  const parts = avatar.userData.parts
+  const localElapsed = Math.max(0, elapsed - completionState.animationStartAt)
+  const bounce = completionPhase === 'celebrating'
+    ? Math.max(0, Math.sin(localElapsed * Math.PI * 2.2)) * 0.18
+    : 0
+  const wave = Math.sin(localElapsed * 8.5) * 0.08
+  const lift = completionPhase === 'celebrating'
+    ? Math.max(0, Math.sin(localElapsed * Math.PI * 3)) * 0.05
+    : 0
+  const leftShoulder = new THREE.Vector3(-0.24, 1.22 + lift, 0)
+  const rightShoulder = new THREE.Vector3(0.24, 1.22 + lift, 0)
+  const leftElbow = new THREE.Vector3(-0.42, 1.48 + lift, wave)
+  const rightElbow = new THREE.Vector3(0.42, 1.48 + lift, -wave)
+  const leftHand = new THREE.Vector3(-0.34, 1.76 + lift, wave)
+  const rightHand = new THREE.Vector3(0.34, 1.76 + lift, -wave)
+  const head = new THREE.Vector3(0, 1.56 + lift * 0.5, 0)
+  const torsoTop = new THREE.Vector3(0, 1.3 + lift * 0.32, 0)
+  const hips = new THREE.Vector3(0, 0.82 + lift * 0.16, 0)
+
+  avatar.position.y += (bounce - avatar.position.y) * 0.28
+  parts.head.position.lerp(head, 0.22)
+  setLimb(parts.torso, torsoTop, hips, 0.24)
+  setLimb(parts.leftUpperArm, leftShoulder, leftElbow, 0.42)
+  setLimb(parts.leftLowerArm, leftElbow, leftHand, 0.42)
+  setLimb(parts.rightUpperArm, rightShoulder, rightElbow, 0.42)
+  setLimb(parts.rightLowerArm, rightElbow, rightHand, 0.42)
+  parts.leftHand.position.lerp(leftHand, 0.42)
+  parts.rightHand.position.lerp(rightHand, 0.42)
+}
+
+function resetRunScene(bikeParts, completionDisplay, motionState, pickupState, keys) {
+  for (const part of bikeParts.parts) {
+    part.collected = false
+    part.collecting = false
+    part.areaId = part.originalAreaId
+    part.x = part.originalX
+    part.z = part.originalZ
+    part.mesh.position.set(part.originalX, 0.24, part.originalZ)
+    part.mesh.scale.setScalar(1)
+    part.mesh.visible = true
+    part.halo.position.set(part.originalX, 0.08, part.originalZ)
+    part.halo.visible = false
+  }
+
+  bikeParts.pickupAnimations.length = 0
+  completionDisplay.group.visible = false
+  resetCompletionAssembly(completionDisplay)
+  motionState.currentAreaId = 'mainStreet'
+  motionState.currentHeading = MAIN_STREET_HEADING
+  motionState.targetHeading = MAIN_STREET_HEADING
+  motionState.facingAngle = AVATAR_BASE_YAW
+  motionState.playerWorldX = 0
+  motionState.playerWorldZ = 0
+  motionState.worldTravel = 0
+  motionState.lateralOffset = 0
+  motionState.x = 0
+  motionState.z = 3.15
+  stopAvatarMotion(motionState, keys)
+  pickupState.feedback = ''
+  pickupState.feedbackUntil = 0
+  pickupState.gestureState = 'waiting'
+  pickupState.nearbyPartId = null
+}
+
+function updateGuideScene(ghostGuide, motionState, guideStep, elapsed) {
+  updateGhostGuide(ghostGuide, motionState, guideStep, elapsed)
+}
+
+function updateGhostGuide(ghostGuide, motionState, guideStep, elapsed) {
+  if (!ghostGuide) {
+    return
+  }
+
+  const guideActive = guideStep && guideStep !== 'hidden'
+
+  ghostGuide.visible = guideActive
+  if (!guideActive) {
+    return
+  }
+
+  const right = rightVectorFromHeading(motionState.currentHeading)
+  const forward = forwardVectorFromHeading(motionState.currentHeading)
+  const avatarPosition = new THREE.Vector3(
+    right.x * motionState.lateralOffset,
+    0.12,
+    motionState.z + right.z * motionState.lateralOffset,
+  )
+  const guideOffset = right.clone().multiplyScalar(-1.12).add(forward.clone().multiplyScalar(0.35))
+  const sidePulse = getGuideSidePulse(elapsed)
+  const sideDemo =
+    guideStep === 'left'
+      ? -sidePulse * 1.05
+      : guideStep === 'right'
+        ? sidePulse * 1.05
+        : 0
+  const sideTurn = guideStep === 'left' ? -0.72 * sidePulse : guideStep === 'right' ? 0.72 * sidePulse : 0
+
+  ghostGuide.position.copy(avatarPosition).add(guideOffset).add(right.clone().multiplyScalar(sideDemo))
+  ghostGuide.rotation.y = avatarYawFromHeading(motionState.currentHeading) + 0.12 + sideTurn
+  ghostGuide.position.y += Math.sin(elapsed * 2.5) * 0.035
+  setGhostGuidePose(ghostGuide, guideStep, elapsed)
+}
+
+function setGhostGuidePose(ghostGuide, guideStep, elapsed) {
+  const parts = ghostGuide.userData.parts
+  const sway = Math.sin(elapsed * 3.2) * 0.035
+  const sideDirection = guideStep === 'left' ? -1 : guideStep === 'right' ? 1 : 0
+  const sidePulse = sideDirection ? getGuideSidePulse(elapsed) : 0
+  const sideSway = sideDirection * (0.24 + sidePulse * 0.48)
+  const walkPhase = Math.sin(elapsed * 9.5)
+  const walk = guideStep === 'walk' ? walkPhase * 0.34 : 0
+  const pickupCycle = guideStep === 'pickup' ? (Math.sin(elapsed * 3.2 - Math.PI * 0.5) + 1) * 0.5 : 0
+  const bend = pickupCycle * 0.52
+  const leftArm = getGhostArmPose('left', guideStep, elapsed)
+  const rightArm = getGhostArmPose('right', guideStep, elapsed)
+  const leftStepLift = guideStep === 'walk' ? Math.max(0, walkPhase) * 0.28 : sideDirection < 0 ? sidePulse * 0.28 : 0
+  const rightStepLift = guideStep === 'walk' ? Math.max(0, -walkPhase) * 0.28 : sideDirection > 0 ? sidePulse * 0.28 : 0
+  const leftFootX = -0.18 + sideSway * 0.42 + (sideDirection < 0 ? -sidePulse * 0.38 : 0)
+  const rightFootX = 0.18 + sideSway * 0.42 + (sideDirection > 0 ? sidePulse * 0.38 : 0)
+
+  parts.head.position.lerp(new THREE.Vector3(sideSway * 0.2, 1.46 - bend, 0.02 + bend * 0.25), 0.18)
+  setLimb(
+    parts.torso,
+    new THREE.Vector3(sideSway * 0.18, 1.2 - bend * 0.88, bend * 0.2),
+    new THREE.Vector3(sideSway * 0.04, 0.78 - bend * 0.34, bend * 0.1),
+    0.22,
+  )
+  setLimb(parts.leftUpperArm, leftArm.shoulder, leftArm.elbow, 0.24)
+  setLimb(parts.leftLowerArm, leftArm.elbow, leftArm.hand, 0.24)
+  setLimb(parts.rightUpperArm, rightArm.shoulder, rightArm.elbow, 0.24)
+  setLimb(parts.rightLowerArm, rightArm.elbow, rightArm.hand, 0.24)
+  setLimb(parts.leftLeg, new THREE.Vector3(-0.12 + sideSway * 0.16, 0.78 - bend * 0.16, 0), new THREE.Vector3(leftFootX, 0.08 + leftStepLift, walk), 0.24)
+  setLimb(parts.rightLeg, new THREE.Vector3(0.12 + sideSway * 0.16, 0.78 - bend * 0.16, 0), new THREE.Vector3(rightFootX, 0.08 + rightStepLift, -walk), 0.24)
+  parts.leftHand.position.lerp(leftArm.hand, 0.24)
+  parts.rightHand.position.lerp(rightArm.hand, 0.24)
+  parts.head.position.y += sway
+}
+
+function getGhostArmPose(sideName, guideStep, elapsed) {
+  const side = sideName === 'left' ? -1 : 1
+  const shoulder = new THREE.Vector3(side * 0.2, 1.18, 0)
+
+  if (guideStep === 'turn') {
+    const demoLeft = Math.sin(elapsed * 1.8) < 0
+    const armOut = (demoLeft && side < 0) || (!demoLeft && side > 0)
+
+    if (armOut) {
+      return {
+        shoulder,
+        elbow: new THREE.Vector3(side * 0.58, 1.11, 0),
+        hand: new THREE.Vector3(side * (0.92 + Math.abs(Math.sin(elapsed * 5)) * 0.16), 1.08, 0),
+      }
+    }
+
+    return {
+      shoulder,
+      elbow: new THREE.Vector3(side * 0.18, 0.86, 0.06),
+      hand: new THREE.Vector3(side * 0.16, 0.62, 0.1),
+    }
+  }
+
+  if (guideStep === 'map') {
+    const raisePulse = 0.82 + Math.sin(elapsed * 5.6) * 0.08
+
+    return {
+      shoulder,
+      elbow: new THREE.Vector3(side * 0.34, 1.36, 0.02),
+      hand: new THREE.Vector3(side * 0.24, 1.62 + raisePulse * 0.08, 0.04),
+    }
+  }
+
+  if (guideStep === 'pickup') {
+    const pickupCycle = (Math.sin(elapsed * 3.2 - Math.PI * 0.5) + 1) * 0.5
+
+    return {
+      shoulder: new THREE.Vector3(side * 0.2, 1.1 - pickupCycle * 0.26, 0.08 + pickupCycle * 0.08),
+      elbow: new THREE.Vector3(side * 0.28, 0.86 - pickupCycle * 0.46, 0.12 + pickupCycle * 0.14),
+      hand: new THREE.Vector3(side * 0.22, 0.62 - pickupCycle * 0.46, 0.16 + pickupCycle * 0.24),
+    }
+  }
+
+  if (guideStep === 'walk') {
+    const armSwing = Math.sin(elapsed * 9.5 + (side < 0 ? Math.PI : 0)) * 0.34
+
+    return {
+      shoulder,
+      elbow: new THREE.Vector3(side * 0.32, 0.86, armSwing),
+      hand: new THREE.Vector3(side * 0.26, 0.54, armSwing * 1.35),
+    }
+  }
+
+  if (guideStep === 'left' || guideStep === 'right') {
+    const direction = guideStep === 'left' ? -1 : 1
+    const sidePulse = getGuideSidePulse(elapsed)
+    const leadingArm = direction === side
+
+    return {
+      shoulder: new THREE.Vector3(side * 0.2 + direction * sidePulse * 0.12, 1.18, 0),
+      elbow: new THREE.Vector3(side * 0.34 + direction * sidePulse * (leadingArm ? 0.26 : 0.08), 0.94, 0.08),
+      hand: new THREE.Vector3(side * 0.32 + direction * sidePulse * (leadingArm ? 0.34 : 0.12), 0.64, 0.14),
+    }
+  }
+
+  return {
+    shoulder,
+    elbow: new THREE.Vector3(side * 0.3, 0.88, 0),
+    hand: new THREE.Vector3(side * 0.26, 0.56, 0),
+  }
+}
+
+function getGuideSidePulse(elapsed) {
+  return (Math.sin(elapsed * 2.7 - Math.PI * 0.5) + 1) * 0.5
+}
+
 function avatarYawFromHeading(heading) {
   return AVATAR_BASE_YAW - heading
 }
@@ -1001,10 +2152,11 @@ function rightVectorFromHeading(heading) {
   return new THREE.Vector3(Math.cos(heading), 0, Math.sin(heading))
 }
 
-function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, tracking, elapsed) {
+function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, tracking, elapsed, onRecalibrateBodyLean) {
   const canTransition = elapsed - motionState.lastTransitionAt > 1
   const atJunction = isNearLeftStreetJunction(motionState)
-  const armTurn = updateArmTurnGestureState(motionState, tracking?.pose, elapsed)
+  const armTurn = updateArmTurnGestureState(motionState, tracking?.pose, tracking?.motion, elapsed)
+  const turnAroundGesture = updateTurnAroundGestureState(motionState, tracking?.pose, tracking?.motion, elapsed)
   const gestureTurnRequested = armTurn.left || armTurn.right
   let gestureTurnApplied = false
 
@@ -1013,6 +2165,13 @@ function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, trackin
     : atJunction && motionState.targetHeading === MAIN_STREET_HEADING
       ? 'Press Q to look left'
       : ''
+
+  if (keys.turnAround) {
+    turnPlayerAround(motionState, elapsed, 'keyboard')
+    keys.turnAround = false
+  } else if (turnAroundGesture.triggered) {
+    turnPlayerAround(motionState, elapsed, 'gesture')
+  }
 
   if (motionState.currentAreaId === 'leftStreet' && keys.returnMain) {
     motionState.currentAreaId = 'mainStreet'
@@ -1032,25 +2191,43 @@ function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, trackin
     keys.returnMain = false
   }
 
-  if (motionState.currentAreaId === 'leftStreet' && (keys.turnLeft || armTurn.left)) {
-    motionState.targetHeading = LEFT_STREET_HEADING
-    gestureTurnApplied = gestureTurnApplied || armTurn.left
-  } else if (atJunction && (keys.turnLeft || armTurn.left)) {
-    motionState.targetHeading = LEFT_STREET_HEADING
-    gestureTurnApplied = gestureTurnApplied || armTurn.left
+  if (gestureTurnRequested) {
+    applyWebcamArmHeadingTurn(motionState, armTurn.left ? 'left' : 'right')
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
+    gestureTurnApplied = true
   }
 
-  if (motionState.currentAreaId === 'leftStreet' && (keys.turnRight || armTurn.right)) {
+  if (motionState.currentAreaId === 'leftStreet' && keys.turnLeft) {
+    motionState.targetHeading = LEFT_STREET_HEADING
+    motionState.headingBefore = motionState.currentHeading
+    motionState.headingAfter = motionState.targetHeading
+    motionState.turnSource = 'keyboard'
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
+  } else if (atJunction && keys.turnLeft) {
+    motionState.targetHeading = LEFT_STREET_HEADING
+    motionState.headingBefore = motionState.currentHeading
+    motionState.headingAfter = motionState.targetHeading
+    motionState.turnSource = 'keyboard'
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
+  }
+
+  if (motionState.currentAreaId === 'leftStreet' && keys.turnRight) {
     motionState.targetHeading = RETURN_FROM_LEFT_HEADING
-    gestureTurnApplied = gestureTurnApplied || armTurn.right
-  } else if (atJunction && (keys.turnRight || armTurn.right)) {
+    motionState.headingBefore = motionState.currentHeading
+    motionState.headingAfter = motionState.targetHeading
+    motionState.turnSource = 'keyboard'
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
+  } else if (atJunction && keys.turnRight) {
     motionState.targetHeading = MAIN_STREET_HEADING
-    gestureTurnApplied = gestureTurnApplied || armTurn.right
+    motionState.headingBefore = motionState.currentHeading
+    motionState.headingAfter = motionState.targetHeading
+    motionState.turnSource = 'keyboard'
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
   }
 
   if (gestureTurnRequested) {
     motionState.armTurnTriggerAccepted = gestureTurnApplied
-    motionState.armTurnBlockedReason = gestureTurnApplied ? 'accepted' : 'not at turn point'
+    motionState.armTurnBlockedReason = gestureTurnApplied ? 'accepted' : 'gesture turn not applied'
   }
 
   if (motionState.currentAreaId === 'mainStreet') {
@@ -1083,235 +2260,313 @@ function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, trackin
   bikeParts.group.visible = true
 }
 
-function updateArmTurnGestureState(motionState, pose, elapsed) {
-  const leftWristUsable = isUsableWrist(pose?.leftWrist)
-  const rightWristUsable = isUsableWrist(pose?.rightWrist)
+function turnPlayerAround(motionState, elapsed, trigger) {
+  const nextHeading = normalizeAngle(motionState.targetHeading + Math.PI)
+
+  motionState.targetHeading = nextHeading
+  motionState.turnAroundCooldownUntil = elapsed + TURN_AROUND_COOLDOWN_SECONDS
+  motionState.turnAroundCooldownMs = TURN_AROUND_COOLDOWN_SECONDS * 1000
+  motionState.armTurnCooldownUntil = Math.max(
+    motionState.armTurnCooldownUntil ?? 0,
+    elapsed + ARM_TURN_COOLDOWN_SECONDS
+  )
+  motionState.armTurnCooldownMs = ARM_TURN_COOLDOWN_SECONDS * 1000
+  motionState.armTurnReleased = false
+  motionState.lastTurnAroundTrigger = trigger
+  motionState.lastTurnAroundTriggerUntil = elapsed + 1.4
+  motionState.lastTurnGesture = trigger === 'gesture' ? 'turnAround' : 'keyboardTurnAround'
+  motionState.lastTurnGestureUntil = elapsed + 1.4
+}
+
+function applyWebcamArmHeadingTurn(motionState, direction) {
+  const headingBefore = motionState.targetHeading
+  const headingDelta = direction === 'left' ? -Math.PI / 2 : Math.PI / 2
+  const targetHeading = motionState.currentAreaId === 'leftStreet' && direction === 'right'
+    ? RETURN_FROM_LEFT_HEADING
+    : snapHeadingToQuarter(headingBefore + headingDelta)
+
+  motionState.targetHeading = targetHeading
+  motionState.headingBefore = headingBefore
+  motionState.headingAfter = targetHeading
+  motionState.turnSource = 'webcam'
+}
+
+function clearTurnSideMovement(motionState, onRecalibrateBodyLean) {
+  motionState.poseVx = 0
+  motionState.vx = 0
+  onRecalibrateBodyLean?.()
+}
+
+function updateTurnAroundGestureState(motionState, pose, motion, elapsed) {
+  void pose
+  void motion
+  const cooldownRemaining = Math.max(
+    0,
+    motionState.turnAroundCooldownUntil - elapsed,
+    motionState.armTurnCooldownUntil - elapsed
+  )
+
+  motionState.armsCrossed = false
+  motionState.armsCrossedDisabled = true
+  motionState.turnAroundCooldownMs = cooldownRemaining * 1000
+  motionState.armTurnCooldownMs = Math.max(motionState.armTurnCooldownMs ?? 0, cooldownRemaining * 1000)
+  if (motionState.lastTurnAroundTriggerUntil <= elapsed) {
+    motionState.lastTurnAroundTrigger = 'none'
+  }
+  if (motionState.lastTurnGestureUntil <= elapsed) {
+    motionState.lastTurnGesture = 'none'
+  }
+
+  return { triggered: false }
+}
+
+function updateArmTurnGestureState(motionState, pose, motion, elapsed) {
+  void motion
+  const gesture = getArmTurnGestureFlags(pose)
   const rawLeftWristX = Number.isFinite(pose?.leftWrist?.x) ? pose.leftWrist.x : 0.5
   const rawRightWristX = Number.isFinite(pose?.rightWrist?.x) ? pose.rightWrist.x : 0.5
-  const leftHistory = updateWristHistory(
-    motionState.leftWristHistory,
-    rawLeftWristX,
-    elapsed,
-    leftWristUsable,
-  )
-  const rightHistory = updateWristHistory(
-    motionState.rightWristHistory,
-    rawRightWristX,
-    elapsed,
-    rightWristUsable,
-  )
-  const leftSwipe = leftWristUsable
-    ? getSwipeDelta(leftHistory, rawLeftWristX, elapsed)
-    : createEmptySwipeDelta()
-  const rightSwipe = rightWristUsable
-    ? getSwipeDelta(rightHistory, rawRightWristX, elapsed)
-    : createEmptySwipeDelta()
-  const dominantSwipe = getDominantSwipe(leftSwipe, rightSwipe)
-  const swipeLeftDetected = dominantSwipe.direction === 'left'
-  const swipeRightDetected = dominantSwipe.direction === 'right'
-  const triggerAttempted = swipeLeftDetected || swipeRightDetected
-  const motionSettled =
-    Math.abs(leftSwipe.deltaX) < ARM_TURN_SETTLE_THRESHOLD &&
-    Math.abs(rightSwipe.deltaX) < ARM_TURN_SETTLE_THRESHOLD
   const cooldownRemaining = Math.max(0, motionState.armTurnCooldownUntil - elapsed)
-  const result = { left: false, right: false }
+  const directionalGestureActive = gesture.leftArmExtended || gesture.rightArmExtended
+  const exclusiveLeft = gesture.leftArmExtended && !gesture.rightArmExtended
+  const exclusiveRight = gesture.rightArmExtended && !gesture.leftArmExtended
 
   motionState.rawLeftWristX = rawLeftWristX
   motionState.rawRightWristX = rawRightWristX
-  motionState.leftWristHistory = leftHistory
-  motionState.rightWristHistory = rightHistory
-  motionState.leftWristDeltaX = leftSwipe.deltaX
-  motionState.rightWristDeltaX = rightSwipe.deltaX
-  motionState.leftArmOut = swipeLeftDetected
-  motionState.rightArmOut = swipeRightDetected
-  motionState.swipeLeftDetected = swipeLeftDetected
-  motionState.swipeRightDetected = swipeRightDetected
+  motionState.leftWristHistory = []
+  motionState.rightWristHistory = []
+  motionState.leftWristDeltaX = gesture.leftWristDeltaX
+  motionState.rightWristDeltaX = gesture.rightWristDeltaX
+  motionState.leftArmDistance = gesture.leftArmDistance
+  motionState.rightArmDistance = gesture.rightArmDistance
+  motionState.leftShoulderX = gesture.leftShoulderX
+  motionState.rightShoulderX = gesture.rightShoulderX
+  motionState.leftWristMinusShoulder = gesture.leftWristMinusShoulder
+  motionState.rightWristMinusShoulder = gesture.rightWristMinusShoulder
+  motionState.leftArmExtendedRaw = gesture.leftArmExtended
+  motionState.rightArmExtendedRaw = gesture.rightArmExtended
+  motionState.leftArmOut = gesture.leftArmExtended
+  motionState.rightArmOut = gesture.rightArmExtended
+  motionState.swipeLeftDetected = false
+  motionState.swipeRightDetected = false
   motionState.armTurnCooldownMs = cooldownRemaining * 1000
-  motionState.armTurnReleased = motionSettled
-  motionState.armTurnTriggerAttempted = triggerAttempted
-  motionState.armTurnTriggerAccepted = motionState.armTurnTriggeredUntil > elapsed
-  motionState.armTurnBlockedReason = getArmTurnBlockedReason({
-    cooldownRemaining,
-    isArmed: motionState.armTurnArmed,
-    leftWristUsable,
-    rightWristUsable,
-    motionSettled,
-    triggerAttempted,
-  })
+  motionState.turnGestureActive = gesture.anyActive
+  motionState.armTurnTriggerAttempted = false
+  motionState.armTurnTriggerAccepted = false
   if (motionState.armTurnTriggeredUntil <= elapsed) {
     motionState.armTurnTriggered = ''
   }
+  if (motionState.lastTurnGestureUntil <= elapsed) {
+    motionState.lastTurnGesture = 'none'
+  }
 
-  if (motionSettled) {
-    if (!motionState.armTurnSettledSince) {
-      motionState.armTurnSettledSince = elapsed
-    }
-    if (elapsed - motionState.armTurnSettledSince >= ARM_TURN_SETTLE_SECONDS) {
-      motionState.armTurnArmed = true
-    }
+  if (!gesture.anyActive) {
+    motionState.leftArmExtendedSince = null
+    motionState.rightArmExtendedSince = null
+    motionState.leftHoldMs = 0
+    motionState.rightHoldMs = 0
+    motionState.armTurnReleased = true
+    motionState.armTurnSettledSince = elapsed
+    motionState.armTurnArmed = true
+    motionState.armTurnBlockedReason = 'ready'
+    return { left: false, right: false }
+  }
+
+  if (exclusiveLeft) {
+    motionState.leftArmExtendedSince ??= elapsed
   } else {
-    motionState.armTurnSettledSince = null
+    motionState.leftArmExtendedSince = null
   }
 
-  if (!motionState.armTurnArmed || !triggerAttempted || cooldownRemaining > 0) {
-    return result
+  if (exclusiveRight) {
+    motionState.rightArmExtendedSince ??= elapsed
+  } else {
+    motionState.rightArmExtendedSince = null
   }
 
-  if (swipeLeftDetected) {
-    fireArmTurnGesture(motionState, elapsed, 'Q')
-    result.left = true
-  } else if (swipeRightDetected) {
-    fireArmTurnGesture(motionState, elapsed, 'E')
-    result.right = true
-  }
-
-  return result
-}
-
-function getDominantSwipe(leftSwipe, rightSwipe) {
-  const strongestSwipe = Math.abs(leftSwipe.deltaX) >= Math.abs(rightSwipe.deltaX)
-    ? leftSwipe
-    : rightSwipe
-
-  if (strongestSwipe.deltaX <= -ARM_TURN_SWIPE_THRESHOLD) {
-    return { direction: 'left', deltaX: strongestSwipe.deltaX }
-  }
-
-  if (strongestSwipe.deltaX >= ARM_TURN_SWIPE_THRESHOLD) {
-    return { direction: 'right', deltaX: strongestSwipe.deltaX }
-  }
-
-  return { direction: 'none', deltaX: strongestSwipe.deltaX }
-}
-
-function getArmTurnBlockedReason({
-  cooldownRemaining,
-  isArmed,
-  leftWristUsable,
-  rightWristUsable,
-  motionSettled,
-  triggerAttempted,
-}) {
-  if (!leftWristUsable && !rightWristUsable) {
-    return 'no usable wrist data'
-  }
-
-  if (!triggerAttempted) {
-    return motionSettled ? 'released/ready' : 'below swipe threshold'
-  }
+  motionState.leftHoldMs = motionState.leftArmExtendedSince === null
+    ? 0
+    : Math.max(0, (elapsed - motionState.leftArmExtendedSince) * 1000)
+  motionState.rightHoldMs = motionState.rightArmExtendedSince === null
+    ? 0
+    : Math.max(0, (elapsed - motionState.rightArmExtendedSince) * 1000)
 
   if (cooldownRemaining > 0) {
-    return 'cooldown'
+    motionState.armTurnBlockedReason = 'cooldown'
+    return { left: false, right: false }
   }
 
-  if (!isArmed) {
-    return 'waiting for release'
+  if (gesture.leftArmExtended && gesture.rightArmExtended) {
+    motionState.armTurnBlockedReason = 'both arms detected'
+    return { left: false, right: false }
   }
 
-  return 'accepted'
-}
-
-function isUsableWrist(wrist) {
-  if (!Number.isFinite(wrist?.x)) {
-    return false
+  if (!motionState.armTurnReleased || !motionState.armTurnArmed) {
+    motionState.armTurnBlockedReason = 'release gesture first'
+    return { left: false, right: false }
   }
 
-  const visibility = Number.isFinite(wrist.visibility) ? wrist.visibility : 1
-  const presence = Number.isFinite(wrist.presence) ? wrist.presence : 1
-  return visibility >= 0.2 && presence >= 0.2
-}
+  const leftHeld = exclusiveLeft && motionState.leftHoldMs >= ARM_TURN_HOLD_SECONDS * 1000
+  const rightHeld = exclusiveRight && motionState.rightHoldMs >= ARM_TURN_HOLD_SECONDS * 1000
 
-function updateWristHistory(history = [], x, elapsed, isUsable) {
-  const nextHistory = history.filter(
-    (sample) => elapsed - sample.elapsed <= ARM_TURN_MAX_WINDOW_SECONDS,
-  )
-
-  if (isUsable) {
-    nextHistory.push({ x, elapsed })
+  if (!leftHeld && !rightHeld) {
+    motionState.armTurnBlockedReason = directionalGestureActive ? 'hold turn gesture' : 'ready'
+    return { left: false, right: false }
   }
 
-  return nextHistory
-}
-
-function getSwipeDelta(history, currentX, elapsed) {
-  let strongestDelta = 0
-
-  for (const sample of history) {
-    const sampleAge = elapsed - sample.elapsed
-    if (
-      sampleAge < ARM_TURN_MIN_SAMPLE_SECONDS ||
-      sampleAge > ARM_TURN_MAX_WINDOW_SECONDS
-    ) {
-      continue
-    }
-
-    const deltaX = currentX - sample.x
-    if (Math.abs(deltaX) > Math.abs(strongestDelta)) {
-      strongestDelta = deltaX
-    }
-  }
-
-  return {
-    deltaX: strongestDelta,
-    leftDetected: strongestDelta <= -ARM_TURN_SWIPE_THRESHOLD,
-    rightDetected: strongestDelta >= ARM_TURN_SWIPE_THRESHOLD,
-  }
-}
-
-function createEmptySwipeDelta() {
-  return {
-    deltaX: 0,
-    leftDetected: false,
-    rightDetected: false,
-  }
-}
-
-function fireArmTurnGesture(motionState, elapsed, triggerKey) {
+  const turnDirection = leftHeld ? 'left' : 'right'
+  motionState.armTurnReleased = false
   motionState.armTurnArmed = false
-  motionState.armTurnBlockedReason = 'accepted'
+  motionState.armTurnTriggerAttempted = true
+  motionState.armTurnTriggered = turnDirection
+  motionState.armTurnTriggeredUntil = elapsed + 1.4
+  motionState.lastTurnGesture = turnDirection
+  motionState.lastTurnGestureUntil = elapsed + 1.4
   motionState.armTurnCooldownUntil = elapsed + ARM_TURN_COOLDOWN_SECONDS
   motionState.armTurnCooldownMs = ARM_TURN_COOLDOWN_SECONDS * 1000
-  motionState.armTurnTriggerAccepted = true
-  motionState.armTurnTriggered = triggerKey
-  motionState.armTurnTriggeredUntil = elapsed + 0.75
-  motionState.armTurnSettledSince = null
-  motionState.leftWristHistory = []
-  motionState.rightWristHistory = []
+  motionState.armTurnBlockedReason = 'attempted'
+
+  return { left: leftHeld, right: rightHeld }
+}
+
+function getArmTurnGestureFlags(pose) {
+  const leftShoulder = pose?.leftShoulder
+  const rightShoulder = pose?.rightShoulder
+  const leftWrist = pose?.leftWrist
+  const rightWrist = pose?.rightWrist
+
+  if (
+    !isValidLandmark(leftShoulder) ||
+    !isValidLandmark(rightShoulder) ||
+    !isValidLandmark(leftWrist) ||
+    !isValidLandmark(rightWrist)
+  ) {
+    return {
+      anyActive: false,
+      armsCrossed: false,
+      leftArmDistance: 0,
+      leftArmExtended: false,
+      leftShoulderX: 0.5,
+      leftWristDeltaX: 0,
+      leftWristMinusShoulder: 0,
+      rightArmDistance: 0,
+      rightArmExtended: false,
+      rightShoulderX: 0.5,
+      rightWristDeltaX: 0,
+      rightWristMinusShoulder: 0,
+    }
+  }
+
+  const leftWristMinusShoulder = leftWrist.x - leftShoulder.x
+  const rightWristMinusShoulder = rightWrist.x - rightShoulder.x
+  const leftArmDistance = Math.abs(leftWristMinusShoulder)
+  const rightArmDistance = Math.abs(rightWristMinusShoulder)
+  const leftWristDeltaX = leftArmDistance
+  const rightWristDeltaX = rightArmDistance
+  const leftArmExtended = leftArmDistance > ARM_TURN_DISTANCE_THRESHOLD
+  const rightArmExtended = rightArmDistance > ARM_TURN_DISTANCE_THRESHOLD
+
+  return {
+    anyActive: leftArmExtended || rightArmExtended,
+    armsCrossed: false,
+    leftArmDistance,
+    leftArmExtended,
+    leftShoulderX: leftShoulder.x,
+    leftWristDeltaX,
+    leftWristMinusShoulder,
+    rightArmDistance,
+    rightArmExtended,
+    rightShoulderX: rightShoulder.x,
+    rightWristDeltaX,
+    rightWristMinusShoulder,
+  }
 }
 
 function isNearLeftStreetJunction(motionState) {
   return Math.abs(motionState.playerWorldZ - LEFT_STREET_ENTRANCE_Z) < 5 && motionState.playerWorldX > -5.8
 }
 
-function publishWorldDebug(motionState, onWorldDebug, elapsed) {
+function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, perfState, tracking, occlusionState) {
   if (!onWorldDebug || elapsed - motionState.lastDebugAt < 0.12) {
     return
   }
 
   motionState.lastDebugAt = elapsed
+  const currentSceneStats = countSceneObjects(scene)
+  const mapPlayer = getWorldMapPlayerPosition(motionState)
+  const avatarWorldPosition = getAvatarWorldMapPosition(motionState)
+  const mapParts = motionState.mapPartDebug ?? []
+
+  perfState.meshCount = currentSceneStats.meshCount
+  perfState.totalObjects = currentSceneStats.totalObjects
+  perfState.visibleObjects = currentSceneStats.visibleObjects
   onWorldDebug({
     avatarBaseYaw: AVATAR_BASE_YAW,
+    avatarWorldX: avatarWorldPosition.x,
+    avatarWorldZ: avatarWorldPosition.z,
     currentAreaId: motionState.currentAreaId,
+    currentHeading: motionState.currentHeading,
     effectiveAvatarYaw: motionState.facingAngle,
     facingAngle: motionState.facingAngle,
     heading: motionState.currentHeading,
+    headingAfter: motionState.headingAfter ?? motionState.targetHeading,
+    headingBefore: motionState.headingBefore ?? motionState.currentHeading,
+    idleDetected: Boolean(tracking?.motion?.idleDetected),
     armTurnCooldownMs: motionState.armTurnCooldownMs ?? 0,
+    turnGestureCooldownMs: motionState.armTurnCooldownMs ?? 0,
+    triggerBlockedReason: motionState.armTurnBlockedReason ?? 'ready',
     armTurnReleased: motionState.armTurnReleased ?? true,
     armTurnBlockedReason: motionState.armTurnBlockedReason ?? 'ready',
     armTurnTriggerAccepted: motionState.armTurnTriggerAccepted ?? false,
     armTurnTriggerAttempted: motionState.armTurnTriggerAttempted ?? false,
+    gestureTriggerAccepted: motionState.armTurnTriggerAccepted ?? false,
+    gestureTriggerAttempted: motionState.armTurnTriggerAttempted ?? false,
     armTurnTriggered: motionState.armTurnTriggered ?? '',
+    armsCrossed: motionState.armsCrossed ?? false,
+    armsCrossedDisabled: motionState.armsCrossedDisabled ?? true,
+    lastTurnGesture: motionState.lastTurnGesture ?? 'none',
+    lastTurnAroundTrigger: motionState.lastTurnAroundTrigger ?? 'none',
+    turnAroundCooldownMs: motionState.turnAroundCooldownMs ?? 0,
     keyboardActive: motionState.keyboardActive,
     keyboardForward: motionState.keyboardForward,
     keyboardMovementValue: motionState.keyboardMovementValue,
     keyboardSide: motionState.keyboardSide,
     keyboardSpeedMultiplier: KEYBOARD_SPEED_MULTIPLIER,
     keyboardSmoothing: KEYBOARD_MOVEMENT_SMOOTHING,
+    finalLateralMovement: motionState.vx,
+    lateralOffset: motionState.lateralOffset,
     leftWristAvatarX: motionState.leftWristAvatarX ?? 0,
+    leftArmDetected: motionState.leftArmExtendedRaw ?? false,
+    leftArmDistance: motionState.leftArmDistance ?? 0,
+    leftArmExtended: motionState.leftArmOut ?? false,
+    leftArmExtendedRaw: motionState.leftArmExtendedRaw ?? false,
     leftArmOut: motionState.leftArmOut ?? false,
+    leftHoldMs: motionState.leftHoldMs ?? 0,
+    leftShoulderX: motionState.leftShoulderX ?? 0.5,
     leftWristDeltaX: motionState.leftWristDeltaX ?? 0,
+    leftWristMinusShoulder: motionState.leftWristMinusShoulder ?? 0,
+    armTurnDistanceThreshold: ARM_TURN_DISTANCE_THRESHOLD,
+    armTurnTestThreshold: ARM_TURN_DISTANCE_THRESHOLD,
     rawLeftWristX: motionState.rawLeftWristX ?? 0.5,
     movementSmoothing: MEDIAPIPE_MOVEMENT_SMOOTHING,
+    localForward: mapPlayer.localForward,
+    localLateral: mapPlayer.localLateral,
+    nearbyPartMapX: motionState.pickupDebug?.nearbyPartMapX ?? null,
+    nearbyPartMapY: motionState.pickupDebug?.nearbyPartMapY ?? null,
+    nearbyPartWorldX: motionState.pickupDebug?.nearbyPartWorldX ?? null,
+    nearbyPartWorldZ: motionState.pickupDebug?.nearbyPartWorldZ ?? null,
+    mapPlayerX: mapPlayer.x,
+    mapPlayerY: mapPlayer.y,
+    mapParts,
+    nearestPartId: motionState.pickupDebug?.nearbyPartId ?? 'none',
+    playerArrowRotation: mapPlayer.playerArrowRotation,
+    playerMapX: motionState.pickupDebug?.playerMapX ?? mapPlayer.x,
+    playerMapY: motionState.pickupDebug?.playerMapY ?? mapPlayer.y,
+    playerPickupWorldX: motionState.pickupDebug?.playerPickupWorldX ?? mapPlayer.worldX,
+    playerPickupWorldZ: motionState.pickupDebug?.playerPickupWorldZ ?? mapPlayer.worldZ,
+    occlusionCameraInsideBuilding: occlusionState?.debug?.cameraInsideBuilding ?? false,
+    occlusionFadedCount: occlusionState?.debug?.fadedCount ?? 0,
+    occlusionFadedIds: occlusionState?.debug?.fadedIds ?? [],
+    occlusionMode: occlusionState?.debug?.mode ?? BUILDING_OCCLUSION_MODE,
     poseDebugMode: POSE_DEBUG_MODE,
     poseMode: POSE_MODE,
     poseMirrorX: POSE_MIRROR_X,
@@ -1319,17 +2574,81 @@ function publishWorldDebug(motionState, onWorldDebug, elapsed) {
     screenLeftWristSource: motionState.screenLeftWristSource ?? 'none',
     screenRightKneeSource: motionState.screenRightKneeSource ?? 'none',
     rightWristAvatarX: motionState.rightWristAvatarX ?? 0,
+    rightArmDetected: motionState.rightArmExtendedRaw ?? false,
+    rightArmDistance: motionState.rightArmDistance ?? 0,
+    rightArmExtended: motionState.rightArmOut ?? false,
+    rightArmExtendedRaw: motionState.rightArmExtendedRaw ?? false,
     rightArmOut: motionState.rightArmOut ?? false,
+    rightHoldMs: motionState.rightHoldMs ?? 0,
+    rightShoulderX: motionState.rightShoulderX ?? 0.5,
     rightWristDeltaX: motionState.rightWristDeltaX ?? 0,
+    rightWristMinusShoulder: motionState.rightWristMinusShoulder ?? 0,
     rawRightWristX: motionState.rawRightWristX ?? 0.5,
     screenRightWristSource: motionState.screenRightWristSource ?? 'none',
     swipeLeftDetected: motionState.swipeLeftDetected ?? false,
     swipeRightDetected: motionState.swipeRightDetected ?? false,
+    trackingStable: Boolean(tracking?.motion?.trackingStable),
+    turnSource: motionState.turnSource ?? 'none',
+    turnGestureActive: Boolean(motionState.turnGestureActive),
     yawInfluence: AVATAR_YAW_INFLUENCE,
     scrolling: motionState.scrolling,
     smoothedSpeed: motionState.smoothedSpeed,
+    playerWorldX: motionState.playerWorldX,
+    playerWorldZ: motionState.playerWorldZ,
+    distanceToNearestPart: motionState.pickupDebug?.pickupDistance ?? null,
+    distancePlayerToNearbyPartOnMap: motionState.pickupDebug?.distancePlayerToNearbyPartOnMap ?? null,
     worldZ: motionState.worldTravel,
+    perf: {
+      avgAmbientMs: perfState.avgAmbientMs,
+      avgAvatarMs: perfState.avgAvatarMs,
+      avgFrameMs: perfState.avgFrameMs,
+      avgHeadingMs: perfState.avgHeadingMs,
+      avgMapDebugMs: perfState.avgMapDebugMs,
+      avgPickupMs: perfState.avgPickupMs,
+      avgRenderMs: perfState.avgRenderMs,
+      avgWorldMs: perfState.avgWorldMs,
+      drawCalls: perfState.drawCalls || renderer.info.render.calls,
+      fps: perfState.fps,
+      mediaPipeActive: Boolean(tracking?.performance?.mediaPipeActive),
+      mediaPipeFrameMs: tracking?.performance?.avgFrameMs ?? 0,
+      mediaPipeHandMs: tracking?.performance?.avgHandMs ?? 0,
+      mediaPipePoseMs: tracking?.performance?.avgPoseMs ?? 0,
+      mediaPipePostMs: tracking?.performance?.avgPostMs ?? 0,
+      meshCount: perfState.meshCount,
+      totalObjects: perfState.totalObjects,
+      visibleObjects: perfState.visibleObjects,
+    },
   })
+}
+
+function smoothMetric(current, next, smoothing = 0.12) {
+  if (!Number.isFinite(current) || current === 0) {
+    return next
+  }
+
+  return current + (next - current) * smoothing
+}
+
+function countSceneObjects(scene) {
+  const stats = {
+    meshCount: 0,
+    totalObjects: 0,
+    visibleObjects: 0,
+  }
+
+  scene.traverse((child) => {
+    stats.totalObjects += 1
+
+    if (child.visible) {
+      stats.visibleObjects += 1
+    }
+
+    if (child.isMesh) {
+      stats.meshCount += 1
+    }
+  })
+
+  return stats
 }
 
 function publishMapData(motionState, parts, onMapData, elapsed) {
@@ -1338,59 +2657,98 @@ function publishMapData(motionState, parts, onMapData, elapsed) {
   }
 
   motionState.lastMapAt = elapsed
+  const mapParts = parts.map((part) => getPartMapData(part))
+  motionState.mapPartDebug = mapParts.map((part) => ({
+    areaId: part.areaId,
+    id: part.id,
+    mapX: part.mapX,
+    mapY: part.mapY,
+    worldX: part.worldX,
+    worldZ: part.worldZ,
+  }))
+
   onMapData({
     areaId: motionState.currentAreaId,
     player: getMapPlayerPosition(motionState),
-    parts: parts.map((part) => ({
-      collected: part.collected,
-      areaId: part.areaId ?? 'mainStreet',
-      id: part.id,
-      label: part.label,
-      ...getPartMapPosition(part.id),
-    })),
+    parts: mapParts,
     transitionLabel: motionState.transitionLabelUntil > elapsed ? motionState.transitionLabel : '',
     turnHint: motionState.turnHint,
   })
 }
 
-function getMapPlayerPosition(motionState) {
-  if (motionState.currentAreaId === 'leftStreet') {
-    const leftProgress = THREE.MathUtils.clamp((Math.abs(motionState.playerWorldX) - 5.2) / 38, 0, 1)
+function getPartMapData(part) {
+  const partPickupWorldPosition = getPartPickupWorldPosition(part)
 
+  return {
+    collected: part.collected,
+    id: part.id,
+    label: part.label,
+    ...partToMapMarker({
+      ...part,
+      x: partPickupWorldPosition.x,
+      z: partPickupWorldPosition.z,
+    }),
+  }
+}
+
+function getMapPlayerPosition(motionState) {
+  const worldPosition = getPlayerPickupWorldPosition(motionState)
+  const mapPosition = playerToMapMarker({
+    areaId: motionState.currentAreaId,
+    currentHeading: motionState.currentHeading,
+    worldX: worldPosition.x,
+    worldZ: worldPosition.z,
+  })
+
+  return {
+    areaId: mapPosition.areaId,
+    localForward: mapPosition.localForward,
+    localLateral: mapPosition.localLateral,
+    mapX: mapPosition.mapX,
+    mapY: mapPosition.mapY,
+    playerArrowRotation: mapPosition.playerArrowRotation,
+    progress: mapPosition.y,
+    side: getStreetSideLabel(mapPosition.localLateral),
+    sidePosition: mapPosition.x,
+    worldX: worldPosition.x,
+    worldZ: worldPosition.z,
+    x: mapPosition.x,
+    y: mapPosition.y,
+  }
+}
+
+function getWorldMapPlayerPosition(motionState) {
+  const worldPosition = getPlayerPickupWorldPosition(motionState)
+
+  return playerToMapMarker({
+    areaId: motionState.currentAreaId,
+    currentHeading: motionState.currentHeading,
+    worldX: worldPosition.x,
+    worldZ: worldPosition.z,
+  })
+}
+
+function getPlayerPickupWorldPosition(motionState) {
+  const pickupWorldX = motionState.pickupDebug?.playerPickupWorldX
+  const pickupWorldZ = motionState.pickupDebug?.playerPickupWorldZ
+
+  if (Number.isFinite(pickupWorldX) && Number.isFinite(pickupWorldZ)) {
     return {
-      progress: THREE.MathUtils.clamp(
-        MAP_LEFT_STREET.centerY + motionState.x / 42,
-        MAP_LEFT_STREET.centerY - MAP_LEFT_STREET.halfWidth * 0.72,
-        MAP_LEFT_STREET.centerY + MAP_LEFT_STREET.halfWidth * 0.72,
-      ),
-      side: getStreetSideLabel(motionState.x),
-      sidePosition: THREE.MathUtils.clamp(
-        MAP_LEFT_STREET.endX - leftProgress * (MAP_LEFT_STREET.endX - MAP_LEFT_STREET.startX),
-        MAP_LEFT_STREET.startX,
-        MAP_LEFT_STREET.endX,
-      ),
+      x: pickupWorldX,
+      z: pickupWorldZ,
     }
   }
 
+  return getAvatarWorldMapPosition(motionState)
+}
+
+function getAvatarWorldMapPosition(motionState) {
+  const avatarScenePosition = getAvatarScenePickupPosition(motionState)
+
   return {
-    progress: normalizeStreetProgress(motionState.worldTravel),
-    side: getStreetSideLabel(motionState.x),
-    sidePosition: projectMainStreetPlayerSide(motionState.x),
+    x: motionState.playerWorldX + avatarScenePosition.x,
+    z: motionState.playerWorldZ + avatarScenePosition.z,
   }
-}
-
-function normalizeStreetProgress(worldTravel) {
-  const progress = (worldTravel % STREET_REPEAT) / STREET_REPEAT
-
-  return THREE.MathUtils.clamp(progress, 0, 1)
-}
-
-function projectMainStreetPlayerSide(x) {
-  return THREE.MathUtils.clamp(
-    MAP_MAIN_STREET.centerX + x / 42,
-    MAP_MAIN_STREET.centerX - MAP_MAIN_STREET.halfWidth * 0.72,
-    MAP_MAIN_STREET.centerX + MAP_MAIN_STREET.halfWidth * 0.72,
-  )
 }
 
 function getStreetSideLabel(x) {
@@ -1407,6 +2765,16 @@ function getStreetSideLabel(x) {
 
 function angleDelta(current, target) {
   return Math.atan2(Math.sin(target - current), Math.cos(target - current))
+}
+
+function normalizeAngle(angle) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle))
+}
+
+function snapHeadingToQuarter(angle) {
+  const quarterTurn = Math.PI / 2
+
+  return normalizeAngle(Math.round(normalizeAngle(angle) / quarterTurn) * quarterTurn)
 }
 
 function applyWalkCycle(points, motionState) {
@@ -1458,6 +2826,7 @@ function updateBikeParts(bikeParts, avatarMotion, avatar, tracking, keys, pickup
   const handsLow = poseHandsLow || keyboardBend
   const nearbyPart = findNearbyPart(bikeParts.parts, avatarMotion)
 
+  pickupState.debug = avatarMotion.pickupDebug
   updatePickupAnimations(bikeParts, avatar, elapsed)
 
   for (const part of bikeParts.parts) {
@@ -1503,12 +2872,14 @@ function updateBikeParts(bikeParts, avatarMotion, avatar, tracking, keys, pickup
 
   if (keyboardBend && (pickupState.gestureState === 'waiting' || pickupState.gestureState === 'hands down')) {
     collectNearbyPart(nearbyPart, bikeParts, avatar, pickupState, elapsed)
-    publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, bikeParts.parts, elapsed)
+    publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, bikeParts.parts, elapsed, true)
     return
   }
 
   if (pickupState.gestureState === 'hands down' && !handsLow) {
     collectNearbyPart(nearbyPart, bikeParts, avatar, pickupState, elapsed)
+    publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, bikeParts.parts, elapsed, true)
+    return
   }
 
   publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, bikeParts.parts, elapsed)
@@ -1765,28 +3136,112 @@ function easeInOutCubic(value) {
 
 function findNearbyPart(parts, avatarMotion) {
   let nearest = null
+  let nearestCalibration = null
   let nearestDistance = Infinity
   const worldOffsetX = -avatarMotion.playerWorldX
   const worldOffsetZ = (-avatarMotion.playerWorldZ) % STREET_REPEAT
+  const avatarScenePosition = getAvatarScenePickupPosition(avatarMotion)
+  let handlebarDebug = null
 
   for (const part of parts) {
+    const partPickupWorldPosition = getPartPickupWorldPosition(part)
+    const visibleZ = partPickupWorldPosition.z + worldOffsetZ
+    const visibleX = partPickupWorldPosition.x + worldOffsetX
+    const dx = visibleX - avatarScenePosition.x
+    const dz = visibleZ - avatarScenePosition.z
+    const distance = Math.hypot(dx * 0.9, dz)
+    const playerPickupWorldPosition = getPlayerPickupWorldPositionFromSceneDelta(partPickupWorldPosition, dx, dz)
+
+    if (part.id === 'handlebar') {
+      handlebarDebug = {
+        distance,
+        sceneX: visibleX,
+        sceneZ: visibleZ,
+      }
+    }
+
     if (part.collected || (part.areaId ?? 'mainStreet') !== avatarMotion.currentAreaId) {
       continue
     }
 
-    const visibleZ = part.z + worldOffsetZ
-    const visibleX = part.x + worldOffsetX
-    const dx = visibleX - avatarMotion.x
-    const dz = visibleZ - avatarMotion.z
-    const distance = Math.hypot(dx * 0.9, dz)
-
     if (Math.abs(dx) < 1.45 && Math.abs(dz) < 2.2 && distance < nearestDistance) {
       nearest = part
+      nearestCalibration = {
+        areaId: part.areaId ?? 'mainStreet',
+        dx,
+        dz,
+        partWorldX: partPickupWorldPosition.x,
+        partWorldZ: partPickupWorldPosition.z,
+        playerWorldX: playerPickupWorldPosition.x,
+        playerWorldZ: playerPickupWorldPosition.z,
+      }
       nearestDistance = distance
     }
   }
 
+  const nearestPartMapPosition = nearestCalibration
+    ? partToMapMarker({
+      areaId: nearestCalibration.areaId,
+      x: nearestCalibration.partWorldX,
+      z: nearestCalibration.partWorldZ,
+    })
+    : null
+  const playerMapPosition = nearestCalibration
+    ? playerToMapMarker({
+      areaId: avatarMotion.currentAreaId,
+      currentHeading: avatarMotion.currentHeading,
+      worldX: nearestCalibration.playerWorldX,
+      worldZ: nearestCalibration.playerWorldZ,
+    })
+    : null
+  const distancePlayerToNearbyPartOnMap = nearestPartMapPosition && playerMapPosition
+    ? Math.hypot(playerMapPosition.mapX - nearestPartMapPosition.mapX, playerMapPosition.mapY - nearestPartMapPosition.mapY)
+    : null
+
+  avatarMotion.pickupDebug = {
+    avatarSceneX: avatarScenePosition.x,
+    avatarSceneZ: avatarScenePosition.z,
+    currentAreaId: avatarMotion.currentAreaId,
+    distancePlayerToNearbyPartOnMap,
+    handlebarDistance: handlebarDebug?.distance ?? null,
+    handlebarSceneX: handlebarDebug?.sceneX ?? null,
+    handlebarSceneZ: handlebarDebug?.sceneZ ?? null,
+    nearbyPartMapX: nearestPartMapPosition?.mapX ?? null,
+    nearbyPartMapY: nearestPartMapPosition?.mapY ?? null,
+    nearbyPartWorldX: nearestCalibration?.partWorldX ?? null,
+    nearbyPartWorldZ: nearestCalibration?.partWorldZ ?? null,
+    nearbyPartId: nearest?.id ?? 'none',
+    playerMapX: playerMapPosition?.mapX ?? null,
+    playerMapY: playerMapPosition?.mapY ?? null,
+    playerPickupWorldX: nearestCalibration?.playerWorldX ?? null,
+    playerPickupWorldZ: nearestCalibration?.playerWorldZ ?? null,
+    pickupDistance: Number.isFinite(nearestDistance) ? nearestDistance : null,
+  }
+
   return nearest
+}
+
+function getPartPickupWorldPosition(part) {
+  return {
+    x: part.x,
+    z: part.z,
+  }
+}
+
+function getPlayerPickupWorldPositionFromSceneDelta(partWorldPosition, dx, dz) {
+  return {
+    x: partWorldPosition.x - dx,
+    z: partWorldPosition.z - dz,
+  }
+}
+
+function getAvatarScenePickupPosition(avatarMotion) {
+  const right = rightVectorFromHeading(avatarMotion.currentHeading)
+
+  return {
+    x: right.x * avatarMotion.lateralOffset,
+    z: avatarMotion.z + right.z * avatarMotion.lateralOffset,
+  }
 }
 
 function getHandsLow(pose) {
@@ -1808,8 +3263,8 @@ function getHandsLow(pose) {
   return leftWrist.y > lowThreshold && rightWrist.y > lowThreshold
 }
 
-function publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, parts, elapsed) {
-  if (!onPickupDebug || elapsed - pickupState.lastDebugAt < 0.1) {
+function publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, parts, elapsed, force = false) {
+  if (!onPickupDebug || (!force && elapsed - pickupState.lastDebugAt < 0.1)) {
     return
   }
 
@@ -1821,16 +3276,23 @@ function publishPickupDebug(pickupState, onPickupDebug, handsLow, nearbyPart, pa
     }
   }
 
+  const collectedCount = parts.filter((part) => part.collected).length
+  const totalParts = parts.length
+
   onPickupDebug({
+    collectedCount,
+    debug: pickupState.debug ?? null,
     feedback: pickupState.feedback,
     gestureState: pickupState.gestureState,
     handsLow,
+    isComplete: totalParts > 0 && collectedCount === totalParts,
     nearbyPart: nearbyPart && !nearbyPart.collected ? nearbyPart.label : 'none',
     parts: parts.map((part) => ({
       collected: part.collected,
       id: part.id,
       label: part.label,
     })),
+    totalParts,
   })
 }
 
@@ -2077,7 +3539,7 @@ function setKeyState(code, keys, value) {
   }
 
   if (code === 'KeyR') {
-    keys.returnMain = value
+    keys.turnAround = value
     return true
   }
 
@@ -2113,17 +3575,63 @@ function createGableRoof(width, depth, height, color) {
   const roof = new THREE.Mesh(geometry, material(color))
 
   addOutlined(group, roof, 0.014)
+  if (!PERFORMANCE_MODE) {
+    addRoofStrokes(group, width, depth, height, color)
+  }
 
-  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, depth * 1.08), material(0x293332))
+  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, depth * 1.08), material(0x38403f))
 
   ridge.position.y = height + 0.02
   addOutlined(group, ridge, 0.004)
 
+  const chimneyPositions = PERFORMANCE_MODE ? [1] : [-1, 1]
+
+  for (const i of chimneyPositions) {
+    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.42, 0.18), material(0xe9dfcf))
+
+    chimney.position.set(i * width * 0.26, height + 0.14, -depth * 0.18)
+    addOutlined(group, chimney, 0.005)
+  }
+
   return group
 }
 
+function createDormerWindow() {
+  const group = new THREE.Group()
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.36, 0.28), material(0x3f4647))
+  const pane = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.23, 0.035), material(0xf8f1e5))
+  const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.23, 0.04), material(0xffffff))
+  const roof = createGableRoof(0.34, 0.36, 0.18, 0x30383d)
+
+  body.position.y = 0.12
+  pane.position.set(0, 0.12, 0.16)
+  mullion.position.set(0, 0.12, 0.18)
+  roof.position.y = 0.3
+  addOutlined(group, body, 0.004)
+  addOutlined(group, pane, 0.003)
+  group.add(mullion, roof)
+
+  return group
+}
+
+function addRoofStrokes(group, width, depth, height, color) {
+  const strokeMaterial = material(tintColor(color, 0xffffff, 0.18))
+
+  for (let i = 0; i < 6; i += 1) {
+    const leftStroke = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.018, depth * 0.92), strokeMaterial)
+    const rightStroke = leftStroke.clone()
+    const x = -width * 0.36 + i * width * 0.14
+
+    leftStroke.position.set(x, height * 0.45 + Math.abs(x) * 0.18, 0)
+    leftStroke.rotation.z = -0.58
+    rightStroke.position.set(-x, height * 0.45 + Math.abs(x) * 0.18, 0)
+    rightStroke.rotation.z = 0.58
+    group.add(leftStroke, rightStroke)
+  }
+}
+
 function addBrickLines(group, width, height, depth) {
-  const brickMaterial = material(0x8b4a3f)
+  const brickMaterial = material(0x8d5a4d)
 
   for (let row = 0; row < Math.floor(height / 0.34); row += 1) {
     const line = new THREE.Mesh(new THREE.BoxGeometry(width * 0.86, 0.018, 0.025), brickMaterial)
@@ -2140,21 +3648,75 @@ function addBrickLines(group, width, height, depth) {
   }
 }
 
+function addFacadeTexture(group, width, height, depth, bodyColor, index) {
+  const light = material(tintColor(bodyColor, 0xffffff, 0.24))
+  const shadow = material(tintColor(bodyColor, 0x6f5d52, 0.16))
+
+  for (let i = 0; i < 12; i += 1) {
+    const stroke = new THREE.Mesh(
+      new THREE.BoxGeometry(width * (0.16 + (i % 4) * 0.06), 0.018, 0.022),
+      i % 3 === 0 ? shadow : light,
+    )
+    const x = -width * 0.34 + ((i * 37 + index * 11) % 68) / 100 * width
+    const y = -height / 2 + 0.55 + ((i * 53 + index * 17) % 78) / 100 * (height - 0.9)
+
+    stroke.position.set(x, y, depth / 2 + 0.036)
+    stroke.rotation.z = ((i % 5) - 2) * 0.018
+    group.add(stroke)
+  }
+}
+
+function addPavingPattern(scene, width, length, x, z, y) {
+  const stoneA = material(0xf4e8d6)
+  const stoneB = material(0xd8c9b7)
+  const seamMaterial = material(0xd5c2aa)
+  const rows = PERFORMANCE_MODE ? 4 : 9
+  const seamCount = PERFORMANCE_MODE ? 14 : 46
+  const stoneCount = PERFORMANCE_MODE ? 8 : 34
+
+  for (let row = 1; row < rows; row += 1) {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.014, length * 0.96), seamMaterial)
+
+    seam.position.set(x - width / 2 + row * (width / rows), y + 0.002, z)
+    scene.add(seam)
+  }
+
+  for (let i = 0; i < seamCount; i += 1) {
+    const cross = new THREE.Mesh(new THREE.BoxGeometry(width * 0.9, 0.013, 0.028), seamMaterial)
+
+    cross.position.set(x, y + 0.003, z + length / 2 - 1.6 - i * (PERFORMANCE_MODE ? 8.6 : 2.55))
+    scene.add(cross)
+  }
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let i = 0; i < stoneCount; i += 1) {
+      const stone = new THREE.Mesh(
+        new THREE.BoxGeometry(0.58 + (i % 3) * 0.08, 0.012, 0.045),
+        (i + row) % 4 === 0 ? stoneB : stoneA,
+      )
+
+      stone.position.set(
+        x - width / 2 + 0.42 + row * (width / rows),
+        y,
+        z + length / 2 - 2.4 - i * (PERFORMANCE_MODE ? 16 : 4.3) - (row % 2) * 1.15,
+      )
+      scene.add(stone)
+    }
+  }
+}
+
 function createTree() {
   const group = new THREE.Group()
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 1.25, 8), material(0x9f7553))
-  const crownA = new THREE.Mesh(new THREE.SphereGeometry(0.46, 14, 10), material(0x8bcf9a))
-  const crownB = new THREE.Mesh(new THREE.SphereGeometry(0.36, 14, 10), material(0xa7d98b))
-  const crownC = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 10), material(0x74bf92))
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 1.25, 8), material(0x8f7058))
+  const crownA = new THREE.Mesh(new THREE.SphereGeometry(0.48, 10, 8), material(0x8aa47a))
+  const crownB = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), material(0xa2b986))
 
   trunk.position.y = 0.62
   crownA.position.set(0, 1.38, 0)
-  crownB.position.set(-0.26, 1.2, 0.04)
-  crownC.position.set(0.28, 1.18, -0.02)
+  crownB.position.set(0.22, 1.2, 0.02)
   addOutlined(group, trunk, 0.009)
   addOutlined(group, crownA, 0.014)
   addOutlined(group, crownB, 0.014)
-  addOutlined(group, crownC, 0.014)
   group.userData.isTree = true
 
   return group
@@ -2162,10 +3724,10 @@ function createTree() {
 
 function createLamp() {
   const group = new THREE.Group()
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 2.1, 8), material(0x43504e))
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.045, 0.045), material(0x43504e))
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.16, 10), material(0x43504e))
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), material(0xffedb7))
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 2.1, 8), material(0x3f4a49))
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.045, 0.045), material(0x3f4a49))
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.16, 10), material(0x4f8f83))
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), material(0xffedbd))
 
   pole.position.y = 1.05
   arm.position.set(0.23, 2.05, 0)
@@ -2182,8 +3744,8 @@ function createLamp() {
 
 function createBench() {
   const group = new THREE.Group()
-  const wood = material(0xc8835a)
-  const metal = material(0x53605e)
+  const wood = material(0xb98062)
+  const metal = material(0x58625f)
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.32), wood)
   const back = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.08), wood)
   const legA = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.36, 0.08), metal)
@@ -2203,14 +3765,15 @@ function createBench() {
 
 function createPlanter() {
   const group = new THREE.Group()
-  const pot = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.26, 0.36), material(0xd38d6b))
+  const pot = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.26, 0.36), material(0xc58d70))
+  const flowerCount = PERFORMANCE_MODE ? 2 : 5
 
   pot.position.y = 0.13
   addOutlined(group, pot, 0.006)
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < flowerCount; i += 1) {
     const flower = new THREE.Mesh(
       new THREE.SphereGeometry(0.055, 8, 6),
-      material(i % 2 === 0 ? 0xf09ab1 : 0xf5d45f)
+      material(i % 2 === 0 ? 0xd996a5 : 0xe4ca73)
     )
 
     flower.position.set(-0.18 + i * 0.09, 0.31 + (i % 2) * 0.03, 0.02)
@@ -2223,7 +3786,7 @@ function createPlanter() {
 function createParkedBike(index) {
   const group = new THREE.Group()
   const tire = material(0x26302f)
-  const frameColor = [0xd7655a, 0x5ca9ad, 0xf0c85a, 0x567a89][index % 4]
+  const frameColor = [0xc65f52, 0x638f9c, 0xd7b962, 0x607d87][index % 4]
   const frame = material(frameColor)
   const metal = material(0x53605e)
   const wheelA = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.018, 8, 22), tire)
@@ -2272,21 +3835,26 @@ function createCafeSet(index) {
   const table = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.045, 14), material(0xf8f0e2))
   const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.32, 8), material(0x53605e))
   const chairA = createCafeChair()
-  const chairB = createCafeChair()
+  const chairB = PERFORMANCE_MODE ? null : createCafeChair()
   const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.08, 8), material(0xffedb7))
 
   table.position.y = 0.45
   stem.position.y = 0.25
   chairA.position.set(-0.35, 0.12, 0)
-  chairB.position.set(0.35, 0.12, 0)
-  chairB.rotation.y = Math.PI
+  if (chairB) {
+    chairB.position.set(0.35, 0.12, 0)
+    chairB.rotation.y = Math.PI
+  }
   candle.position.set(0, 0.52, 0)
   addOutlined(group, table, 0.006)
   addOutlined(group, stem, 0.004)
   addOutlined(group, candle, 0.003)
-  group.add(chairA, chairB)
+  group.add(chairA)
+  if (chairB) {
+    group.add(chairB)
+  }
 
-  if (index % 2 === 0) {
+  if (!PERFORMANCE_MODE && index % 2 === 0) {
     const umbrella = createCafeUmbrella()
 
     umbrella.position.set(0, 0.46, 0)
@@ -2296,9 +3864,161 @@ function createCafeSet(index) {
   return group
 }
 
+function createCafeBuildingFrontage(width, height, depth) {
+  const group = new THREE.Group()
+  const shopfront = new THREE.Mesh(new THREE.BoxGeometry(width * 0.92, 0.72, 0.075), material(0x3f3834))
+  const warmWindow = new THREE.Mesh(new THREE.BoxGeometry(width * 0.34, 0.42, 0.09), material(0xf2d3a1))
+  const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.24, 0.58, 0.1), material(0x4b5658))
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(width * 0.7, 0.22, 0.09), material(0x594238))
+  const text = createPaintedText('KAFFE', 0xf8ead4, width * 0.62, 0.2)
+
+  shopfront.position.set(0, -height / 2 + 0.42, depth / 2 + 0.085)
+  warmWindow.position.set(-width * 0.18, -height / 2 + 0.42, depth / 2 + 0.14)
+  door.position.set(width * 0.25, -height / 2 + 0.35, depth / 2 + 0.15)
+  sign.position.set(0, -height / 2 + 0.96, depth / 2 + 0.14)
+  text.position.set(0, -height / 2 + 0.96, depth / 2 + 0.2)
+  addOutlined(group, shopfront, 0.005)
+  addOutlined(group, warmWindow, 0.004)
+  addOutlined(group, door, 0.004)
+  addOutlined(group, sign, 0.004)
+  group.add(text)
+
+  return group
+}
+
+function createFlowerBuildingFrontage(width, height, depth) {
+  const group = new THREE.Group()
+  const shopfront = new THREE.Mesh(new THREE.BoxGeometry(width * 0.92, 0.66, 0.075), material(0xf6e8d2))
+  const awning = new THREE.Mesh(new THREE.BoxGeometry(width * 0.96, 0.13, 0.34), material(0xc98c9e))
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(width * 0.78, 0.22, 0.09), material(0x7b8f74))
+  const text = createPaintedText('BLOMSTER', 0xfff4df, width * 0.74, 0.18)
+
+  shopfront.position.set(0, -height / 2 + 0.4, depth / 2 + 0.085)
+  awning.position.set(0, -height / 2 + 0.78, depth / 2 + 0.17)
+  sign.position.set(0, -height / 2 + 1.02, depth / 2 + 0.14)
+  text.position.set(0, -height / 2 + 1.02, depth / 2 + 0.2)
+  addOutlined(group, shopfront, 0.005)
+  addOutlined(group, awning, 0.006)
+  addOutlined(group, sign, 0.004)
+  group.add(text)
+
+  return group
+}
+
+function createCafeStreetMoment() {
+  const group = new THREE.Group()
+  const chalkboard = createChalkboard('kaffe')
+  const umbrella = createCafeUmbrella()
+  const planterA = createPlanter()
+  const planterB = createPlanter()
+
+  for (let i = 0; i < 3; i += 1) {
+    const table = createCafeSet(i + 2)
+
+    table.position.set(-0.45 + i * 0.45, 0, -0.35 - i * 0.32)
+    table.scale.setScalar(0.86)
+    group.add(table)
+  }
+
+  chalkboard.position.set(0.78, 0.02, -1.15)
+  chalkboard.rotation.y = -0.28
+  umbrella.position.set(-0.18, 0.22, -0.66)
+  umbrella.scale.set(1.25, 1.15, 1.25)
+  planterA.position.set(-0.95, 0.08, 0.22)
+  planterB.position.set(0.95, 0.08, 0.12)
+  group.add(chalkboard, umbrella, planterA, planterB)
+
+  return group
+}
+
+function createFlowerShopStreetMoment() {
+  const group = new THREE.Group()
+  const display = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.13, 0.42), material(0xa8755d))
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.5, 0.08), material(0xb98062))
+  const sign = createChalkboard('flowers')
+
+  display.position.set(0, 0.25, -0.28)
+  back.position.set(0, 0.48, -0.49)
+  back.rotation.x = -0.12
+  addOutlined(group, display, 0.005)
+  addOutlined(group, back, 0.005)
+
+  for (let i = 0; i < 7; i += 1) {
+    const bucket = createFlowerBucket(i)
+
+    bucket.position.set(-0.45 + i * 0.15, 0.09, -0.06 - (i % 2) * 0.22)
+    group.add(bucket)
+  }
+
+  sign.position.set(0.72, 0.02, -0.78)
+  sign.rotation.y = -0.26
+  group.add(sign)
+
+  return group
+}
+
+function createFlowerBucket(index) {
+  const group = new THREE.Group()
+  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.065, 0.22, 10), material(0x7f8a86))
+  const colors = [0xd996a5, 0xe4ca73, 0xf8f0e2, 0xb6a5c9]
+  const bloomCount = PERFORMANCE_MODE ? 2 : 5
+
+  bucket.position.y = 0.12
+  addOutlined(group, bucket, 0.004)
+  for (let i = 0; i < bloomCount; i += 1) {
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 5), material(0x789675))
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), material(colors[(index + i) % colors.length]))
+
+    stem.position.set(-0.05 + i * 0.025, 0.27, -0.02 + (i % 2) * 0.035)
+    stem.rotation.z = (-2 + i) * 0.12
+    bloom.position.set(stem.position.x, 0.41 + (i % 2) * 0.03, stem.position.z)
+    addOutlined(group, stem, 0.002)
+    addOutlined(group, bloom, 0.002)
+  }
+
+  return group
+}
+
+function createChalkboard(kind) {
+  const group = new THREE.Group()
+  const board = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.54, 0.045), material(0x4c4f49))
+  const legA = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.48, 0.035), material(0x8b6753))
+  const legB = legA.clone()
+  const text = createPaintedText(kind === 'flowers' ? 'fresh' : 'dagens', 0xf8ead4, 0.38, 0.18)
+
+  board.position.y = 0.46
+  legA.position.set(-0.16, 0.2, -0.02)
+  legA.rotation.z = -0.12
+  legB.position.set(0.16, 0.2, -0.02)
+  legB.rotation.z = 0.12
+  text.position.set(0, 0.5, 0.032)
+  addOutlined(group, board, 0.004)
+  addOutlined(group, legA, 0.003)
+  addOutlined(group, legB, 0.003)
+  group.add(text)
+
+  return group
+}
+
+function createPostbox() {
+  const group = new THREE.Group()
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.72, 0.28), material(0xb94f47))
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.035, 0.035), material(0xf3dbc0))
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 0.32), material(0xa6433f))
+
+  body.position.y = 0.4
+  slot.position.set(0, 0.58, 0.16)
+  cap.position.y = 0.78
+  addOutlined(group, body, 0.006)
+  addOutlined(group, slot, 0.003)
+  addOutlined(group, cap, 0.004)
+
+  return group
+}
+
 function createCafeChair() {
   const group = new THREE.Group()
-  const wood = material(0xc8835a)
+  const wood = material(0xb98062)
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.045, 0.18), wood)
   const back = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.18, 0.045), wood)
 
@@ -2313,7 +4033,7 @@ function createCafeChair() {
 function createCafeUmbrella() {
   const group = new THREE.Group()
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.78, 8), material(0x53605e))
-  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.22, 16), material(0xe8796d))
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.22, 16), material(0xd28a7c))
 
   pole.position.y = 0.38
   shade.position.y = 0.8
@@ -2325,7 +4045,7 @@ function createCafeUmbrella() {
 
 function createCanalHint() {
   const group = new THREE.Group()
-  const water = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.035, 118), material(0x85c9d7))
+  const water = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.035, 118), material(0x91bdc9))
   const edge = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 118), material(0xd6cbb9))
 
   water.position.set(0, 0, 0)
@@ -2352,11 +4072,12 @@ function createCanalHint() {
 
 function createFlowerBox() {
   const group = new THREE.Group()
-  const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.11, 0.12), material(0xb77752))
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.11, 0.12), material(0xa8755d))
+  const flowerCount = PERFORMANCE_MODE ? 2 : 4
 
   addOutlined(group, box, 0.005)
-  for (let i = 0; i < 4; i += 1) {
-    const flower = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), material(i % 2 === 0 ? 0xf09ab1 : 0xf6d56e))
+  for (let i = 0; i < flowerCount; i += 1) {
+    const flower = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), material(i % 2 === 0 ? 0xd996a5 : 0xe4ca73))
 
     flower.position.set(-0.15 + i * 0.1, 0.08, 0.02)
     addOutlined(group, flower, 0.003)
@@ -2378,15 +4099,44 @@ function createCrosswalk() {
   return group
 }
 
+function createDistantDome() {
+  const group = new THREE.Group()
+  const base = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.15, 0.5), material(0xeadfcf))
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(1.05, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.52), material(0x609f9b))
+  const ribs = material(0xd9b466)
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.82, 14), material(0xd9b466))
+
+  base.position.y = 0.58
+  dome.position.y = 1.16
+  spire.position.y = 2.45
+  addOutlined(group, base, 0.006)
+  addOutlined(group, dome, 0.008)
+  addOutlined(group, spire, 0.004)
+
+  for (let i = -3; i <= 3; i += 1) {
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.82, 0.035), ribs)
+
+    rib.position.set(i * 0.25, 1.62 - Math.abs(i) * 0.07, 0.26)
+    rib.rotation.z = i * -0.12
+    group.add(rib)
+  }
+
+  group.scale.set(1.35, 1.35, 1.35)
+
+  return group
+}
+
 function addAmbientDetails(scene) {
   const clouds = []
   const trees = []
+  const cloudCount = PERFORMANCE_MODE ? 3 : 8
 
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < cloudCount; i += 1) {
     const cloud = new THREE.Group()
+    const puffCount = PERFORMANCE_MODE ? 2 : 4
 
-    for (let puff = 0; puff < 4; puff += 1) {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32 + puff * 0.025, 12, 8), material(0xffffff))
+    for (let puff = 0; puff < puffCount; puff += 1) {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32 + puff * 0.025, 12, 8), material(0xfff4ea))
 
       mesh.position.set(puff * 0.32, Math.sin(puff) * 0.05, 0)
       addOutlined(cloud, mesh, 0.008)
@@ -2407,22 +4157,81 @@ function addAmbientDetails(scene) {
   return { clouds, trees }
 }
 
+const textureCache = new Map()
+
 function material(color) {
-  return new THREE.MeshToonMaterial({ color })
+  return new THREE.MeshLambertMaterial({
+    color,
+    map: getPaintTexture(color),
+  })
 }
 
 function addOutlined(parent, mesh, thickness) {
-  mesh.castShadow = true
+  const skipOutline = PERFORMANCE_MODE && thickness < 0.008
+
+  mesh.castShadow = !PERFORMANCE_MODE || thickness >= 0.012
+  mesh.receiveShadow = !PERFORMANCE_MODE || thickness >= 0.01
   parent.add(mesh)
+
+  if (skipOutline) {
+    return
+  }
 
   const outline = mesh.clone()
 
   outline.material = new THREE.MeshBasicMaterial({
-    color: INK,
+    color: 0x6b625a,
+    opacity: 0.26,
     side: THREE.BackSide,
+    transparent: true,
   })
   outline.scale.multiplyScalar(1 + thickness)
   outline.castShadow = false
   outline.receiveShadow = false
   parent.add(outline)
+}
+
+function getPaintTexture(color) {
+  if (textureCache.has(color)) {
+    return textureCache.get(color)
+  }
+
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+
+  canvas.width = 64
+  canvas.height = 64
+  if (!context) {
+    return null
+  }
+
+  const base = new THREE.Color(color)
+
+  context.fillStyle = `#${base.getHexString()}`
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  for (let i = 0; i < 42; i += 1) {
+    const mix = base.clone().lerp(new THREE.Color(i % 2 === 0 ? 0xffffff : 0x5f5148), i % 2 === 0 ? 0.12 : 0.08)
+    const alpha = i % 2 === 0 ? 0.28 : 0.18
+
+    context.strokeStyle = `rgba(${Math.round(mix.r * 255)}, ${Math.round(mix.g * 255)}, ${Math.round(mix.b * 255)}, ${alpha})`
+    context.lineWidth = 1 + (i % 3)
+    context.beginPath()
+    context.moveTo((i * 19) % 64, -8 + ((i * 11) % 24))
+    context.lineTo(-8 + ((i * 7) % 32), 72 - ((i * 13) % 20))
+    context.stroke()
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(2, 2)
+  texture.colorSpace = THREE.SRGBColorSpace
+  textureCache.set(color, texture)
+
+  return texture
+}
+
+function tintColor(color, target, amount) {
+  return new THREE.Color(color).lerp(new THREE.Color(target), amount).getHex()
 }

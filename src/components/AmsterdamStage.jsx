@@ -1,6 +1,15 @@
 import Webcam from "react-webcam";
+import { StatusPill } from "./StatusPill";
+
+const STARTING_LIVES = 3;
+const TULIP_IMAGES = {
+  blue: "/amsterdam background/blue-tulip.png",
+  pink: "/amsterdam background/pink-tulip.png",
+  yellow: "/amsterdam background/yellow-tulip.png",
+};
 
 export function AmsterdamStage({
+  activeHoverId,
   canvasRef,
   countdown,
   fingerPos,
@@ -11,6 +20,8 @@ export function AmsterdamStage({
   isCalibrated,
   isLoading,
   isRunning,
+  mapHoverRef,
+  onBackToMap,
   onCameraError,
   onCameraReady,
   onHandCameraReady,
@@ -18,21 +29,26 @@ export function AmsterdamStage({
   onStartCamera,
   onStartRound,
   preRoundCountdown,
+  runAgainHoverRef,
+  stageRef,
+  startHoverRef,
   tracking,
   videoConstraints,
   webcamRef,
 }) {
   const showHandTracking = !isRunning || game.status === "finished";
   const showFingerCursor = showHandTracking && fingerPos;
+  const isPlaying = isRunning && game.status === "playing";
 
   return (
-    <div className="amsterdam-stage" data-round={game.status}>
+    <div className="amsterdam-stage" data-round={game.status} ref={stageRef}>
       <div className="canal-sky">
         <span></span>
         <span></span>
         <span></span>
       </div>
       <div className="canal-water"></div>
+      <div className="amsterdam-ground" aria-hidden="true"></div>
       <div className="tulip-track" aria-hidden="true">
         {game.obstacles.map((tulip) => (
           <div
@@ -40,9 +56,7 @@ export function AmsterdamStage({
             key={tulip.id}
             style={{ "--scale": tulip.scale, "--x": `${tulip.x * 100}%` }}
           >
-            <i></i>
-            <i></i>
-            <i></i>
+            <img src={TULIP_IMAGES[tulip.kind]} alt="" draggable="false" />
           </div>
         ))}
       </div>
@@ -68,7 +82,6 @@ export function AmsterdamStage({
 
       {/* Camera preview */}
       <div className="pose-preview">
-        {/* Hand tracking webcam — before game and after round ends */}
         {showHandTracking && handIsReady && (
           <Webcam
             ref={handWebcamRef}
@@ -79,7 +92,6 @@ export function AmsterdamStage({
             videoConstraints={videoConstraints}
           />
         )}
-        {/* Pose webcam — while game is actively running */}
         {isRunning && game.status !== "finished" && (
           <Webcam
             ref={webcamRef}
@@ -106,24 +118,58 @@ export function AmsterdamStage({
         <span>{showHandTracking ? "Hover to start" : tracking.label}</span>
       </div>
 
-      {isRunning && game.status !== "finished" && (
-        <div className="stage-hud">
-          <span>{game.score} pts</span>
-          <span>{Math.ceil(game.timeLeft)}s</span>
-          <span>Lives {game.lives}</span>
+      {/* HUD chips — top-left, visible while playing */}
+      {isPlaying && (
+        <div className="stage-chips" aria-live="polite">
+          <div className="stage-chip">
+            <span className="stage-chip-icon">⏱</span>
+            {formatChipTime(game.timeLeft)}
+          </div>
+          <div className="stage-chip">
+            <span className="stage-chip-icon">🌷</span>
+            {game.cleared}
+          </div>
+          <div
+            className="stage-chip"
+            data-warning={game.lives === 1 ? "true" : undefined}
+          >
+            {Array.from({ length: STARTING_LIVES }, (_, i) => (
+              <span key={i} className="stage-chip-icon">
+                {i < game.lives ? "❤️" : "🖤"}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Status pill — top-right, visible while playing */}
+      {isPlaying && (
+        <div className="stage-status">
+          <StatusPill mode={tracking.mode} label={tracking.label} />
         </div>
       )}
 
       {/* Pre-game overlay */}
       {!isRunning && (
         <div className="round-overlay">
-          <p>Amsterdam challenge</p>
+          <p className="round-overlay-eyebrow">Amsterdam challenge</p>
           <strong>Jump the tulips</strong>
+          <div className="how-to-play-card">
+            <span className="how-to-play-label">How to play</span>
+            <ul className="how-to-play-steps">
+              <li>Jump in place to make your character leap over tulips</li>
+              <li>Hit a tulip and you lose a ❤️ life, you have 3</li>
+              <li>Clear as many tulips as you can in 20 seconds</li>
+              <li>Make sure your full body is visible to the camera!</li>
+            </ul>
+          </div>
           <HoverZone
             countdown={countdown}
-            label={isLoading ? "Loading…" : "Start"}
+            label={isLoading ? "Loading…" : "Begin round"}
             onClick={onStartCamera}
             disabled={isLoading}
+            targetRef={startHoverRef}
+            variant="start"
           />
           <p className="hover-hint">
             {fingerPos ? "Hold still…" : "Point your finger at the button"}
@@ -131,29 +177,39 @@ export function AmsterdamStage({
         </div>
       )}
 
-      {/* Post-round overlay — same hover mechanic */}
+      {/* Post-round overlay */}
       {isRunning && isCalibrated && game.status === "finished" && (
         <div className="round-overlay">
-          <p>Canal run complete</p>
+          <p className="round-overlay-eyebrow">Canal run complete</p>
           <strong>{game.score} pts</strong>
           {game.funFact && (
             <div className="fun-fact-card">
-              <span className="fun-fact-label">🌷 Amsterdam fun fact</span>
+              <span className="fun-fact-label">Amsterdam fun fact</span>
               <p className="fun-fact-text">{game.funFact}</p>
             </div>
           )}
-          <HoverZone
-            countdown={countdown}
-            label="Run again"
-            onClick={onStartRound}
-          />
+          <div className="post-round-actions">
+            <HoverZone
+              countdown={activeHoverId === "again" ? countdown : null}
+              label="Run again"
+              onClick={onStartRound}
+              targetRef={runAgainHoverRef}
+              variant="again"
+            />
+            <HoverZone
+              countdown={activeHoverId === "map" ? countdown : null}
+              label="Back to map"
+              onClick={onBackToMap}
+              targetRef={mapHoverRef}
+              variant="map"
+            />
+          </div>
           <p className="hover-hint">
             {fingerPos ? "Hold still…" : "Point your finger at the button"}
           </p>
         </div>
       )}
 
-      {/* Finger cursor — ring animation lives on the cursor itself */}
       {showFingerCursor && (
         <FingerCursor fingerPos={fingerPos} countdown={countdown} />
       )}
@@ -163,7 +219,7 @@ export function AmsterdamStage({
           <strong>Stand still</strong>
           <span>
             {tracking.mode === "searching"
-              ? "Back up until your full body is visible — hips must be in frame"
+              ? "Back up until your full body is visible, hips must be in frame"
               : `Calibrating… ${Math.round(tracking.calibrationProgress * 100)}%`}
           </span>
           <div>
@@ -193,9 +249,16 @@ export function AmsterdamStage({
   );
 }
 
-function HoverZone({ countdown, label, onClick, disabled }) {
+function HoverZone({
+  countdown,
+  label,
+  onClick,
+  disabled,
+  targetRef,
+  variant = "start",
+}) {
   return (
-    <div className="hover-zone">
+    <div className="hover-zone" data-variant={variant} ref={targetRef}>
       <button
         type="button"
         className="hover-start-btn"
@@ -234,4 +297,11 @@ function FingerCursor({ fingerPos, countdown }) {
       )}
     </div>
   );
+}
+
+function formatChipTime(timeLeft) {
+  const s = Math.ceil(Math.max(0, timeLeft));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${String(rem).padStart(2, "0")}`;
 }

@@ -10,24 +10,30 @@ function App() {
 
   if (screen === "paris") {
     return (
-      <main className="app-shell">
-        <ParisExperience />
-      </main>
+      <>
+        <div className="city-bg paris-bg" />
+        <main className="app-shell">
+          <ParisExperience onBackToMap={() => setScreen("landing")} />
+        </main>
+      </>
     );
   }
 
   if (screen === "amsterdam") {
     return (
-      <main className="app-shell">
-        <AmsterdamExperience />
-      </main>
+      <>
+        <div className="city-bg amsterdam-bg" />
+        <main className="app-shell">
+          <AmsterdamExperience onBackToMap={() => setScreen("landing")} />
+        </main>
+      </>
     );
   }
 
   if (screen === "copenhagen") {
     return (
       <main className="app-shell">
-        <CopenhagenExperience />
+        <CopenhagenExperience onBackToCities={() => setScreen("landing")} />
       </main>
     );
   }
