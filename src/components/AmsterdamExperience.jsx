@@ -172,14 +172,14 @@ export function AmsterdamExperience({ onBackToMap }) {
     return () => clearTimeout(t)
   }, [preRoundCountdown, startRound])
 
-  function handleStopCamera() {
-    resetRound()
-    stopCamera()
-    setCountdown(null)
-    setActiveHoverId(null)
-    hoverTargetIdRef.current = null
-    firedRef.current = false
-  }
+  // function handleStopCamera() {
+  //   resetRound()
+  //   stopCamera()
+  //   setCountdown(null)
+  //   setActiveHoverId(null)
+  //   hoverTargetIdRef.current = null
+  //   firedRef.current = false
+  // }
 
   return (
     <>
