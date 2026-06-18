@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { BIKE_PARTS } from '../game/bikeParts'
-import { getPartMapPosition } from '../game/mapMarkers'
+import { partToMapMarker, playerToMapMarker } from '../game/mapMarkers'
 import {
   AVATAR_BASE_YAW,
   AVATAR_YAW_INFLUENCE,
@@ -14,8 +14,6 @@ import {
   LEFT_STREET_ENTRANCE_Z,
   LEFT_STREET_HEADING,
   MAIN_STREET_HEADING,
-  MAP_LEFT_STREET,
-  MAP_MAIN_STREET,
   MEDIAPIPE_MOVEMENT_SMOOTHING,
   MEDIAPIPE_MOVE_SPEED_MULTIPLIER,
   PICKUP_ANIMATION_DURATION,
@@ -32,14 +30,10 @@ import {
   STREET_REPEAT,
 } from '../scene/constants'
 
-const ARM_TURN_SWIPE_THRESHOLD = 0.12
-const ARM_TURN_MAX_WINDOW_SECONDS = 0.7
-const ARM_TURN_MIN_SAMPLE_SECONDS = 0.05
-const ARM_TURN_COOLDOWN_SECONDS = 0.8
-const ARM_TURN_SETTLE_THRESHOLD = 0.05
-const ARM_TURN_SETTLE_SECONDS = 0.2
-const TURN_AROUND_HOLD_SECONDS = 0.5
 const TURN_AROUND_COOLDOWN_SECONDS = 1.2
+const ARM_TURN_DISTANCE_THRESHOLD = 0.12
+const ARM_TURN_HOLD_SECONDS = 0.35
+const ARM_TURN_COOLDOWN_SECONDS = 0.9
 const BUILDING_OCCLUSION_MODE = 'hide'
 const BUILDING_OCCLUSION_OPACITY = 0.08
 const PERFORMANCE_MODE = true
@@ -50,11 +44,6 @@ const VISUAL_CURB_X = VISUAL_ROAD_WIDTH / 2 + 0.08
 const VISUAL_SIDEWALK_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH / 2
 const VISUAL_BUILDING_FACE_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH + 0.22
 const VISUAL_PROP_X = VISUAL_ROAD_WIDTH / 2 + 0.72
-const MAP_MAIN_START_Y = 0.88
-const MAP_MAIN_Z_TO_Y_SCALE = 55
-const MAP_LEFT_INTERSECTION_X = -5.2
-const MAP_LEFT_BRANCH_LENGTH = 38
-const MAP_LATERAL_TO_POSITION_SCALE = 42
 const HOUSE_BLOCKS = [
   { floors: 4, length: 2.35, shopKind: 'cafe', width: 1.35 },
   { floors: 5, length: 1.7, width: 1.05 },
@@ -69,22 +58,24 @@ const HOUSE_BLOCKS = [
 ]
 export function ThreeStreetScene({
   completionPhase = 'idle',
-  currentTutorialStep = 0,
+  guideStep = 'hidden',
+  isMapOpen = false,
   onMapData,
   onPickupDebug,
+  onRecalibrateBodyLean,
   onWorldDebug,
   resetRunKey = 0,
   tracking,
-  tutorialActive = false,
 }) {
   const completionPhaseRef = useRef(completionPhase)
+  const guideStepRef = useRef(guideStep)
+  const isMapOpenRef = useRef(isMapOpen)
   const mountRef = useRef(null)
-  const currentTutorialStepRef = useRef(currentTutorialStep)
   const resetRunKeyRef = useRef(resetRunKey)
   const trackingRef = useRef(tracking)
-  const tutorialActiveRef = useRef(tutorialActive)
   const onMapDataRef = useRef(onMapData)
   const onPickupDebugRef = useRef(onPickupDebug)
+  const onRecalibrateBodyLeanRef = useRef(onRecalibrateBodyLean)
   const onWorldDebugRef = useRef(onWorldDebug)
 
   useEffect(() => {
@@ -92,8 +83,12 @@ export function ThreeStreetScene({
   }, [completionPhase])
 
   useEffect(() => {
-    currentTutorialStepRef.current = currentTutorialStep
-  }, [currentTutorialStep])
+    isMapOpenRef.current = isMapOpen
+  }, [isMapOpen])
+
+  useEffect(() => {
+    guideStepRef.current = guideStep
+  }, [guideStep])
 
   useEffect(() => {
     resetRunKeyRef.current = resetRunKey
@@ -104,16 +99,16 @@ export function ThreeStreetScene({
   }, [tracking])
 
   useEffect(() => {
-    tutorialActiveRef.current = tutorialActive
-  }, [tutorialActive])
-
-  useEffect(() => {
     onMapDataRef.current = onMapData
   }, [onMapData])
 
   useEffect(() => {
     onPickupDebugRef.current = onPickupDebug
   }, [onPickupDebug])
+
+  useEffect(() => {
+    onRecalibrateBodyLeanRef.current = onRecalibrateBodyLean
+  }, [onRecalibrateBodyLean])
 
   useEffect(() => {
     onWorldDebugRef.current = onWorldDebug
@@ -180,7 +175,9 @@ export function ThreeStreetScene({
     scene.add(world)
     const avatar = createPoseAvatar()
     const ghostGuide = createGhostGuide()
+    const avatarInstruction = createAvatarInstructionDisplay()
     const completionDisplay = createCompletionDisplay()
+    scene.add(avatarInstruction.group)
     scene.add(completionDisplay.group)
     const avatarMotion = {
       facingAngle: AVATAR_BASE_YAW,
@@ -200,13 +197,27 @@ export function ThreeStreetScene({
       armTurnTriggerAttempted: false,
       armTurnTriggered: '',
       armTurnTriggeredUntil: 0,
+      leftArmExtendedSince: null,
+      leftArmDistance: 0,
+      leftArmExtendedRaw: false,
+      leftHoldMs: 0,
       leftArmOut: false,
+      leftShoulderX: 0.5,
+      leftWristMinusShoulder: 0,
       leftWristDeltaX: 0,
       leftWristHistory: [],
+      lastTurnGesture: 'none',
+      lastTurnGestureUntil: 0,
       rawLeftWristX: 0.5,
       playerWorldX: 0,
       playerWorldZ: 0,
+      rightArmExtendedSince: null,
+      rightArmDistance: 0,
+      rightArmExtendedRaw: false,
+      rightHoldMs: 0,
       rightArmOut: false,
+      rightShoulderX: 0.5,
+      rightWristMinusShoulder: 0,
       rightWristDeltaX: 0,
       rightWristHistory: [],
       rawRightWristX: 0.5,
@@ -216,9 +227,9 @@ export function ThreeStreetScene({
       transitionLabel: '',
       transitionLabelUntil: 0,
       turnHint: '',
+      turnSource: 'none',
       armsCrossed: false,
-      armsCrossedArmed: true,
-      armsCrossedSince: null,
+      armsCrossedDisabled: true,
       lastTurnAroundTrigger: 'none',
       lastTurnAroundTriggerUntil: 0,
       turnAroundCooldownMs: 0,
@@ -229,6 +240,8 @@ export function ThreeStreetScene({
       keyboardSide: 0,
       keyboardVx: 0,
       keyboardVz: 0,
+      headingAfter: MAIN_STREET_HEADING,
+      headingBefore: MAIN_STREET_HEADING,
       poseVx: 0,
       poseVz: 0,
       smoothedSpeed: 0,
@@ -352,11 +365,19 @@ export function ThreeStreetScene({
         stopAvatarMotion(avatarMotion, keys)
       }
       updateAvatar(avatar, avatarMotion, completionLocksGameplay ? null : trackingRef.current, elapsed, keys)
-      updateCompletionAvatarPose(avatar, completionPhase, elapsed)
+      updateCompletionAvatarPose(avatar, completionPhase, completionState, elapsed)
       perfState.avgAvatarMs = smoothMetric(perfState.avgAvatarMs, performance.now() - avatarStartedAt)
       const headingStartedAt = performance.now()
       if (!completionLocksGameplay) {
-        updateHeadingAndArea(avatarMotion, bikeParts, pickupState, keys, trackingRef.current, elapsed)
+        updateHeadingAndArea(
+          avatarMotion,
+          bikeParts,
+          pickupState,
+          keys,
+          trackingRef.current,
+          elapsed,
+          onRecalibrateBodyLeanRef.current
+        )
       }
       perfState.avgHeadingMs = smoothMetric(perfState.avgHeadingMs, performance.now() - headingStartedAt)
       const worldStartedAt = performance.now()
@@ -367,12 +388,10 @@ export function ThreeStreetScene({
         updateCameraFollow(camera, avatar, avatarMotion)
       }
       updateCameraOcclusionFading(scene, camera, avatar, occlusionState)
-      updateTutorialScene(
+      updateGuideScene(
         ghostGuide,
-        bikeParts,
         avatarMotion,
-        tutorialActiveRef.current,
-        currentTutorialStepRef.current,
+        guideStepRef.current,
         elapsed,
       )
       updateCompletionDisplay(completionDisplay, avatar, avatarMotion, completionPhase, completionState, elapsed)
@@ -385,6 +404,17 @@ export function ThreeStreetScene({
         pickupState.feedback = ''
         publishPickupDebug(pickupState, onPickupDebugRef.current, false, null, bikeParts.parts, elapsed, true)
       }
+      updateAvatarInstructionDisplay(
+        avatarInstruction,
+        avatar,
+        ghostGuide,
+        avatarMotion,
+        pickupState,
+        trackingRef.current,
+        isMapOpenRef.current,
+        guideStepRef.current,
+        completionPhase,
+      )
       updateBackpackGlow(avatar, elapsed)
       perfState.avgPickupMs = smoothMetric(perfState.avgPickupMs, performance.now() - pickupStartedAt)
       const mapDebugStartedAt = performance.now()
@@ -399,6 +429,12 @@ export function ThreeStreetScene({
     }
 
     function handleKeyDown(event) {
+      if (event.code === 'KeyC' && !event.repeat) {
+        onRecalibrateBodyLeanRef.current?.()
+        event.preventDefault()
+        return
+      }
+
       if (setKeyState(event.code, keys, true)) {
         event.preventDefault()
       }
@@ -980,12 +1016,12 @@ function createGhostGuide() {
   const group = new THREE.Group()
   const ghostMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
-    opacity: 0.52,
+    opacity: 0.68,
     transparent: true,
   })
   const accentMaterial = new THREE.MeshBasicMaterial({
     color: 0xd8fff7,
-    opacity: 0.62,
+    opacity: 0.78,
     transparent: true,
   })
 
@@ -1006,10 +1042,185 @@ function createGhostGuide() {
     group.add(part)
   }
 
-  group.scale.setScalar(1.08)
+  group.scale.setScalar(1.2)
   group.visible = false
 
   return group
+}
+
+function createAvatarInstructionDisplay() {
+  const group = new THREE.Group()
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    depthTest: false,
+    opacity: 0,
+    transparent: true,
+  }))
+
+  sprite.renderOrder = 20
+  sprite.scale.set(7.1, 2.18, 1)
+  group.add(sprite)
+  group.visible = false
+
+  return {
+    group,
+    lastText: '',
+    sprite,
+  }
+}
+
+function updateAvatarInstructionDisplay(
+  display,
+  avatar,
+  ghostGuide,
+  motionState,
+  pickupState,
+  tracking,
+  isMapOpen,
+  guideStep,
+  completionPhase,
+) {
+  if (!display?.sprite || completionPhase === 'postcard') {
+    if (display?.group) {
+      display.group.visible = false
+    }
+    return
+  }
+
+  const feedback = getAvatarInstructionFeedback({
+    guideStep,
+    isMapOpen,
+    motionState,
+    pickupState,
+    tracking,
+  })
+  if (!feedback) {
+    display.group.visible = false
+    display.sprite.material.opacity += (0 - display.sprite.material.opacity) * 0.22
+    return
+  }
+
+  const textKey = `${feedback.action}|${feedback.instruction}`
+  const target = guideStep && guideStep !== 'hidden' && ghostGuide?.visible ? ghostGuide : avatar
+
+  display.group.visible = true
+  display.group.position.copy(target.position).add(new THREE.Vector3(0, 2.72, 0))
+  display.sprite.material.opacity += (0.96 - display.sprite.material.opacity) * 0.18
+  if (display.lastText === textKey) {
+    return
+  }
+
+  display.lastText = textKey
+  display.sprite.material.map?.dispose()
+  display.sprite.material.map = createInstructionBubbleTexture(feedback.instruction)
+  display.sprite.material.needsUpdate = true
+}
+
+function getAvatarInstructionFeedback({ guideStep }) {
+  return getGuideInstructionFeedback(guideStep)
+}
+
+function getGuideInstructionFeedback(guideStep) {
+  if (guideStep === 'walk') {
+    return {
+      action: 'Guide',
+      instruction: 'MOVE ARMS + LEGS TO WALK',
+    }
+  }
+
+  if (guideStep === 'left') {
+    return {
+      action: 'Guide',
+      instruction: 'MOVE BODY LEFT',
+    }
+  }
+
+  if (guideStep === 'right') {
+    return {
+      action: 'Guide',
+      instruction: 'MOVE BODY RIGHT',
+    }
+  }
+
+  if (guideStep === 'pickup') {
+    return {
+      action: 'Guide',
+      instruction: 'BEND DOWN TO PICK UP',
+    }
+  }
+
+  if (guideStep === 'map') {
+    return {
+      action: 'Guide',
+      instruction: 'RAISE BOTH HANDS FOR MAP',
+    }
+  }
+
+  if (guideStep === 'turn') {
+    return {
+      action: 'Guide',
+      instruction: 'STRETCH ARM TO TURN\nLEFT ARM = LEFT, RIGHT ARM = RIGHT',
+    }
+  }
+
+  return null
+}
+
+function createInstructionBubbleTexture(instruction) {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+
+  canvas.width = 1600
+  canvas.height = 520
+  if (!context) {
+    return null
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+
+  const lines = instruction.split('\n')
+  const maxTextWidth = canvas.width - 240
+  const primarySize = lines.length > 1 ? 94 : 112
+  const secondarySize = 62
+  const startY = lines.length > 1 ? 200 : 260
+  const lineGap = lines.length > 1 ? 118 : 0
+
+  context.shadowColor = 'rgba(25, 28, 28, 0.72)'
+  context.shadowBlur = 28
+  context.shadowOffsetY = 10
+
+  lines.forEach((line, index) => {
+    const baseFontSize = index === 0 ? primarySize : secondarySize
+    const fontSize = getFittedInstructionFontSize(context, line, baseFontSize, maxTextWidth)
+    const y = startY + index * lineGap
+
+    context.font = `950 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`
+    context.lineWidth = index === 0 ? 22 : 14
+    context.strokeStyle = 'rgba(22, 28, 27, 0.88)'
+    context.strokeText(line, canvas.width / 2, y)
+    context.fillStyle = index === 0 ? '#fff8df' : '#ffffff'
+    context.fillText(line, canvas.width / 2, y)
+  })
+
+  const texture = new THREE.CanvasTexture(canvas)
+
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
+function getFittedInstructionFontSize(context, text, fontSize, maxWidth) {
+  let nextSize = fontSize
+
+  while (nextSize > 42) {
+    context.font = `950 ${nextSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`
+    if (context.measureText(text).width <= maxWidth) {
+      return nextSize
+    }
+    nextSize -= 4
+  }
+
+  return nextSize
 }
 
 function createBikeParts() {
@@ -1536,10 +1747,11 @@ function updateAvatar(avatar, motionState, tracking, elapsed, keys) {
   const motion = tracking?.motion ?? { lateral: 0, speed: 0, walking: false }
   const bodyVisible = Boolean(tracking?.bodyCenter?.visible && pose?.leftShoulder && pose?.rightShoulder)
   const targetSpeed = bodyVisible && motion.walking ? (motion.speed ?? 0.05) * MEDIAPIPE_MOVE_SPEED_MULTIPLIER : 0
+  const targetSideSpeed = bodyVisible ? (motion.sideMovement ?? motion.lateral ?? 0) * MEDIAPIPE_MOVE_SPEED_MULTIPLIER : 0
   const keyboardX = Number(keys.right) - Number(keys.left)
   const keyboardZ = -Number(keys.forward)
   const keyboardActive = keyboardX !== 0 || keyboardZ !== 0
-  const poseVx = (motion.directionX ?? 0) * targetSpeed
+  const poseVx = targetSideSpeed
   const poseVz = (motion.directionZ ?? -1) * targetSpeed
   const keyboardTargetVx = keyboardX * KEYBOARD_SIDE_SPEED
   const keyboardTargetVz = keyboardZ * KEYBOARD_FORWARD_SPEED
@@ -1703,26 +1915,45 @@ function resetCompletionAssembly(display) {
   }
 }
 
-function updateCompletionAvatarPose(avatar, completionPhase, elapsed) {
+function updateCompletionAvatarPose(avatar, completionPhase, completionState, elapsed) {
   if (completionPhase !== 'celebrating' && completionPhase !== 'postcard') {
+    avatar.position.y += (0 - avatar.position.y) * 0.18
     return
   }
 
-  const parts = avatar.userData.parts
-  const wave = Math.sin(elapsed * 5.5) * 0.08
-  const leftShoulder = new THREE.Vector3(-0.24, 1.22, 0)
-  const rightShoulder = new THREE.Vector3(0.24, 1.22, 0)
-  const leftElbow = new THREE.Vector3(-0.36, 1.5, wave)
-  const rightElbow = new THREE.Vector3(0.36, 1.5, -wave)
-  const leftHand = new THREE.Vector3(-0.3, 1.74, wave)
-  const rightHand = new THREE.Vector3(0.3, 1.74, -wave)
+  if (completionState.activeKey !== completionPhase) {
+    completionState.activeKey = completionPhase
+    completionState.animationStartAt = elapsed
+  }
 
-  setLimb(parts.leftUpperArm, leftShoulder, leftElbow, 0.32)
-  setLimb(parts.leftLowerArm, leftElbow, leftHand, 0.32)
-  setLimb(parts.rightUpperArm, rightShoulder, rightElbow, 0.32)
-  setLimb(parts.rightLowerArm, rightElbow, rightHand, 0.32)
-  parts.leftHand.position.lerp(leftHand, 0.32)
-  parts.rightHand.position.lerp(rightHand, 0.32)
+  const parts = avatar.userData.parts
+  const localElapsed = Math.max(0, elapsed - completionState.animationStartAt)
+  const bounce = completionPhase === 'celebrating'
+    ? Math.max(0, Math.sin(localElapsed * Math.PI * 2.2)) * 0.18
+    : 0
+  const wave = Math.sin(localElapsed * 8.5) * 0.08
+  const lift = completionPhase === 'celebrating'
+    ? Math.max(0, Math.sin(localElapsed * Math.PI * 3)) * 0.05
+    : 0
+  const leftShoulder = new THREE.Vector3(-0.24, 1.22 + lift, 0)
+  const rightShoulder = new THREE.Vector3(0.24, 1.22 + lift, 0)
+  const leftElbow = new THREE.Vector3(-0.42, 1.48 + lift, wave)
+  const rightElbow = new THREE.Vector3(0.42, 1.48 + lift, -wave)
+  const leftHand = new THREE.Vector3(-0.34, 1.76 + lift, wave)
+  const rightHand = new THREE.Vector3(0.34, 1.76 + lift, -wave)
+  const head = new THREE.Vector3(0, 1.56 + lift * 0.5, 0)
+  const torsoTop = new THREE.Vector3(0, 1.3 + lift * 0.32, 0)
+  const hips = new THREE.Vector3(0, 0.82 + lift * 0.16, 0)
+
+  avatar.position.y += (bounce - avatar.position.y) * 0.28
+  parts.head.position.lerp(head, 0.22)
+  setLimb(parts.torso, torsoTop, hips, 0.24)
+  setLimb(parts.leftUpperArm, leftShoulder, leftElbow, 0.42)
+  setLimb(parts.leftLowerArm, leftElbow, leftHand, 0.42)
+  setLimb(parts.rightUpperArm, rightShoulder, rightElbow, 0.42)
+  setLimb(parts.rightLowerArm, rightElbow, rightHand, 0.42)
+  parts.leftHand.position.lerp(leftHand, 0.42)
+  parts.rightHand.position.lerp(rightHand, 0.42)
 }
 
 function resetRunScene(bikeParts, completionDisplay, motionState, pickupState, keys) {
@@ -1759,18 +1990,19 @@ function resetRunScene(bikeParts, completionDisplay, motionState, pickupState, k
   pickupState.nearbyPartId = null
 }
 
-function updateTutorialScene(ghostGuide, bikeParts, motionState, tutorialActive, currentTutorialStep, elapsed) {
-  updateGhostGuide(ghostGuide, motionState, tutorialActive, currentTutorialStep, elapsed)
-  updateTutorialPartPlacement(bikeParts, motionState, tutorialActive, currentTutorialStep)
+function updateGuideScene(ghostGuide, motionState, guideStep, elapsed) {
+  updateGhostGuide(ghostGuide, motionState, guideStep, elapsed)
 }
 
-function updateGhostGuide(ghostGuide, motionState, tutorialActive, currentTutorialStep, elapsed) {
+function updateGhostGuide(ghostGuide, motionState, guideStep, elapsed) {
   if (!ghostGuide) {
     return
   }
 
-  ghostGuide.visible = tutorialActive
-  if (!tutorialActive) {
+  const guideActive = guideStep && guideStep !== 'hidden'
+
+  ghostGuide.visible = guideActive
+  if (!guideActive) {
     return
   }
 
@@ -1782,88 +2014,118 @@ function updateGhostGuide(ghostGuide, motionState, tutorialActive, currentTutori
     motionState.z + right.z * motionState.lateralOffset,
   )
   const guideOffset = right.clone().multiplyScalar(-1.12).add(forward.clone().multiplyScalar(0.35))
+  const sidePulse = getGuideSidePulse(elapsed)
+  const sideDemo =
+    guideStep === 'left'
+      ? -sidePulse * 1.05
+      : guideStep === 'right'
+        ? sidePulse * 1.05
+        : 0
+  const sideTurn = guideStep === 'left' ? -0.72 * sidePulse : guideStep === 'right' ? 0.72 * sidePulse : 0
 
-  ghostGuide.position.copy(avatarPosition).add(guideOffset)
-  ghostGuide.rotation.y = avatarYawFromHeading(motionState.currentHeading) + 0.12
+  ghostGuide.position.copy(avatarPosition).add(guideOffset).add(right.clone().multiplyScalar(sideDemo))
+  ghostGuide.rotation.y = avatarYawFromHeading(motionState.currentHeading) + 0.12 + sideTurn
   ghostGuide.position.y += Math.sin(elapsed * 2.5) * 0.035
-  setGhostGuidePose(ghostGuide, currentTutorialStep, elapsed)
+  setGhostGuidePose(ghostGuide, guideStep, elapsed)
 }
 
-function setGhostGuidePose(ghostGuide, currentTutorialStep, elapsed) {
+function setGhostGuidePose(ghostGuide, guideStep, elapsed) {
   const parts = ghostGuide.userData.parts
   const sway = Math.sin(elapsed * 3.2) * 0.035
-  const sideSway = currentTutorialStep === 0 ? Math.sin(elapsed * 2.3) * 0.34 : 0
-  const walk = currentTutorialStep === 1 ? Math.sin(elapsed * 8) * 0.18 : 0
-  const bend = currentTutorialStep === 6 ? 0.28 : 0
-  const leftArm = getGhostArmPose('left', currentTutorialStep, elapsed)
-  const rightArm = getGhostArmPose('right', currentTutorialStep, elapsed)
+  const sideDirection = guideStep === 'left' ? -1 : guideStep === 'right' ? 1 : 0
+  const sidePulse = sideDirection ? getGuideSidePulse(elapsed) : 0
+  const sideSway = sideDirection * (0.24 + sidePulse * 0.48)
+  const walkPhase = Math.sin(elapsed * 9.5)
+  const walk = guideStep === 'walk' ? walkPhase * 0.34 : 0
+  const pickupCycle = guideStep === 'pickup' ? (Math.sin(elapsed * 3.2 - Math.PI * 0.5) + 1) * 0.5 : 0
+  const bend = pickupCycle * 0.52
+  const leftArm = getGhostArmPose('left', guideStep, elapsed)
+  const rightArm = getGhostArmPose('right', guideStep, elapsed)
+  const leftStepLift = guideStep === 'walk' ? Math.max(0, walkPhase) * 0.28 : sideDirection < 0 ? sidePulse * 0.28 : 0
+  const rightStepLift = guideStep === 'walk' ? Math.max(0, -walkPhase) * 0.28 : sideDirection > 0 ? sidePulse * 0.28 : 0
+  const leftFootX = -0.18 + sideSway * 0.42 + (sideDirection < 0 ? -sidePulse * 0.38 : 0)
+  const rightFootX = 0.18 + sideSway * 0.42 + (sideDirection > 0 ? sidePulse * 0.38 : 0)
 
   parts.head.position.lerp(new THREE.Vector3(sideSway * 0.2, 1.46 - bend, 0.02 + bend * 0.25), 0.18)
   setLimb(
     parts.torso,
-    new THREE.Vector3(sideSway * 0.16, 1.2 - bend * 0.78, bend * 0.12),
-    new THREE.Vector3(0, 0.78 - bend * 0.24, 0),
+    new THREE.Vector3(sideSway * 0.18, 1.2 - bend * 0.88, bend * 0.2),
+    new THREE.Vector3(sideSway * 0.04, 0.78 - bend * 0.34, bend * 0.1),
     0.22,
   )
   setLimb(parts.leftUpperArm, leftArm.shoulder, leftArm.elbow, 0.24)
   setLimb(parts.leftLowerArm, leftArm.elbow, leftArm.hand, 0.24)
   setLimb(parts.rightUpperArm, rightArm.shoulder, rightArm.elbow, 0.24)
   setLimb(parts.rightLowerArm, rightArm.elbow, rightArm.hand, 0.24)
-  setLimb(parts.leftLeg, new THREE.Vector3(-0.12, 0.78, 0), new THREE.Vector3(-0.18 + sideSway * 0.18, 0.08 + Math.max(0, walk) * 0.45, walk), 0.2)
-  setLimb(parts.rightLeg, new THREE.Vector3(0.12, 0.78, 0), new THREE.Vector3(0.18 + sideSway * 0.18, 0.08 + Math.max(0, -walk) * 0.45, -walk), 0.2)
+  setLimb(parts.leftLeg, new THREE.Vector3(-0.12 + sideSway * 0.16, 0.78 - bend * 0.16, 0), new THREE.Vector3(leftFootX, 0.08 + leftStepLift, walk), 0.24)
+  setLimb(parts.rightLeg, new THREE.Vector3(0.12 + sideSway * 0.16, 0.78 - bend * 0.16, 0), new THREE.Vector3(rightFootX, 0.08 + rightStepLift, -walk), 0.24)
   parts.leftHand.position.lerp(leftArm.hand, 0.24)
   parts.rightHand.position.lerp(rightArm.hand, 0.24)
   parts.head.position.y += sway
 }
 
-function getGhostArmPose(sideName, currentTutorialStep, elapsed) {
+function getGhostArmPose(sideName, guideStep, elapsed) {
   const side = sideName === 'left' ? -1 : 1
   const shoulder = new THREE.Vector3(side * 0.2, 1.18, 0)
 
-  if (currentTutorialStep === 3) {
-    return {
-      shoulder,
-      elbow: new THREE.Vector3(side * 0.28, 1.52, 0),
-      hand: new THREE.Vector3(side * 0.22, 1.76, 0),
-    }
-  }
-
-  if (currentTutorialStep === 4) {
+  if (guideStep === 'turn') {
     const demoLeft = Math.sin(elapsed * 1.8) < 0
     const armOut = (demoLeft && side < 0) || (!demoLeft && side > 0)
 
     if (armOut) {
       return {
         shoulder,
-        elbow: new THREE.Vector3(side * 0.48, 1.08, 0),
-        hand: new THREE.Vector3(side * (0.72 + Math.abs(Math.sin(elapsed * 5)) * 0.18), 1.04, 0),
+        elbow: new THREE.Vector3(side * 0.58, 1.11, 0),
+        hand: new THREE.Vector3(side * (0.92 + Math.abs(Math.sin(elapsed * 5)) * 0.16), 1.08, 0),
       }
     }
-  }
-
-  if (currentTutorialStep === 5) {
-    return {
-      shoulder,
-      elbow: new THREE.Vector3(side * 0.1, 1.03, 0.1),
-      hand: new THREE.Vector3(-side * 0.28, 0.98, 0.16),
-    }
-  }
-
-  if (currentTutorialStep === 6) {
-    return {
-      shoulder: new THREE.Vector3(side * 0.2, 0.98, 0.08),
-      elbow: new THREE.Vector3(side * 0.3, 0.48, 0.16),
-      hand: new THREE.Vector3(side * 0.22, 0.18, 0.24),
-    }
-  }
-
-  if (currentTutorialStep === 1) {
-    const armSwing = Math.sin(elapsed * 8 + (side < 0 ? 0 : Math.PI)) * 0.16
 
     return {
       shoulder,
-      elbow: new THREE.Vector3(side * 0.3, 0.88, armSwing),
-      hand: new THREE.Vector3(side * 0.26, 0.62, armSwing * 1.2),
+      elbow: new THREE.Vector3(side * 0.18, 0.86, 0.06),
+      hand: new THREE.Vector3(side * 0.16, 0.62, 0.1),
+    }
+  }
+
+  if (guideStep === 'map') {
+    const raisePulse = 0.82 + Math.sin(elapsed * 5.6) * 0.08
+
+    return {
+      shoulder,
+      elbow: new THREE.Vector3(side * 0.34, 1.36, 0.02),
+      hand: new THREE.Vector3(side * 0.24, 1.62 + raisePulse * 0.08, 0.04),
+    }
+  }
+
+  if (guideStep === 'pickup') {
+    const pickupCycle = (Math.sin(elapsed * 3.2 - Math.PI * 0.5) + 1) * 0.5
+
+    return {
+      shoulder: new THREE.Vector3(side * 0.2, 1.1 - pickupCycle * 0.26, 0.08 + pickupCycle * 0.08),
+      elbow: new THREE.Vector3(side * 0.28, 0.86 - pickupCycle * 0.46, 0.12 + pickupCycle * 0.14),
+      hand: new THREE.Vector3(side * 0.22, 0.62 - pickupCycle * 0.46, 0.16 + pickupCycle * 0.24),
+    }
+  }
+
+  if (guideStep === 'walk') {
+    const armSwing = Math.sin(elapsed * 9.5 + (side < 0 ? Math.PI : 0)) * 0.34
+
+    return {
+      shoulder,
+      elbow: new THREE.Vector3(side * 0.32, 0.86, armSwing),
+      hand: new THREE.Vector3(side * 0.26, 0.54, armSwing * 1.35),
+    }
+  }
+
+  if (guideStep === 'left' || guideStep === 'right') {
+    const direction = guideStep === 'left' ? -1 : 1
+    const sidePulse = getGuideSidePulse(elapsed)
+    const leadingArm = direction === side
+
+    return {
+      shoulder: new THREE.Vector3(side * 0.2 + direction * sidePulse * 0.12, 1.18, 0),
+      elbow: new THREE.Vector3(side * 0.34 + direction * sidePulse * (leadingArm ? 0.26 : 0.08), 0.94, 0.08),
+      hand: new THREE.Vector3(side * 0.32 + direction * sidePulse * (leadingArm ? 0.34 : 0.12), 0.64, 0.14),
     }
   }
 
@@ -1874,36 +2136,8 @@ function getGhostArmPose(sideName, currentTutorialStep, elapsed) {
   }
 }
 
-function updateTutorialPartPlacement(bikeParts, motionState, tutorialActive, currentTutorialStep) {
-  const tutorialPart = bikeParts.parts[0]
-
-  if (!tutorialPart || tutorialPart.collected) {
-    return
-  }
-
-  if (!tutorialActive || currentTutorialStep !== 6) {
-    restoreTutorialPart(tutorialPart)
-    return
-  }
-
-  const worldOffsetX = -motionState.playerWorldX
-  const worldOffsetZ = (-motionState.playerWorldZ) % STREET_REPEAT
-  const targetX = motionState.x - worldOffsetX
-  const targetZ = motionState.z - 0.8 - worldOffsetZ
-
-  tutorialPart.areaId = motionState.currentAreaId
-  tutorialPart.x = targetX
-  tutorialPart.z = targetZ
-  tutorialPart.mesh.position.set(targetX, 0.24, targetZ)
-  tutorialPart.halo.position.set(targetX, 0.08, targetZ)
-}
-
-function restoreTutorialPart(part) {
-  part.areaId = part.originalAreaId
-  part.x = part.originalX
-  part.z = part.originalZ
-  part.mesh.position.set(part.originalX, 0.24, part.originalZ)
-  part.halo.position.set(part.originalX, 0.08, part.originalZ)
+function getGuideSidePulse(elapsed) {
+  return (Math.sin(elapsed * 2.7 - Math.PI * 0.5) + 1) * 0.5
 }
 
 function avatarYawFromHeading(heading) {
@@ -1918,11 +2152,11 @@ function rightVectorFromHeading(heading) {
   return new THREE.Vector3(Math.cos(heading), 0, Math.sin(heading))
 }
 
-function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, tracking, elapsed) {
+function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, tracking, elapsed, onRecalibrateBodyLean) {
   const canTransition = elapsed - motionState.lastTransitionAt > 1
   const atJunction = isNearLeftStreetJunction(motionState)
-  const armTurn = updateArmTurnGestureState(motionState, tracking?.pose, elapsed)
-  const turnAroundGesture = updateTurnAroundGestureState(motionState, tracking?.pose, elapsed)
+  const armTurn = updateArmTurnGestureState(motionState, tracking?.pose, tracking?.motion, elapsed)
+  const turnAroundGesture = updateTurnAroundGestureState(motionState, tracking?.pose, tracking?.motion, elapsed)
   const gestureTurnRequested = armTurn.left || armTurn.right
   let gestureTurnApplied = false
 
@@ -1957,25 +2191,43 @@ function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, trackin
     keys.returnMain = false
   }
 
-  if (motionState.currentAreaId === 'leftStreet' && (keys.turnLeft || armTurn.left)) {
-    motionState.targetHeading = LEFT_STREET_HEADING
-    gestureTurnApplied = gestureTurnApplied || armTurn.left
-  } else if (atJunction && (keys.turnLeft || armTurn.left)) {
-    motionState.targetHeading = LEFT_STREET_HEADING
-    gestureTurnApplied = gestureTurnApplied || armTurn.left
+  if (gestureTurnRequested) {
+    applyWebcamArmHeadingTurn(motionState, armTurn.left ? 'left' : 'right')
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
+    gestureTurnApplied = true
   }
 
-  if (motionState.currentAreaId === 'leftStreet' && (keys.turnRight || armTurn.right)) {
+  if (motionState.currentAreaId === 'leftStreet' && keys.turnLeft) {
+    motionState.targetHeading = LEFT_STREET_HEADING
+    motionState.headingBefore = motionState.currentHeading
+    motionState.headingAfter = motionState.targetHeading
+    motionState.turnSource = 'keyboard'
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
+  } else if (atJunction && keys.turnLeft) {
+    motionState.targetHeading = LEFT_STREET_HEADING
+    motionState.headingBefore = motionState.currentHeading
+    motionState.headingAfter = motionState.targetHeading
+    motionState.turnSource = 'keyboard'
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
+  }
+
+  if (motionState.currentAreaId === 'leftStreet' && keys.turnRight) {
     motionState.targetHeading = RETURN_FROM_LEFT_HEADING
-    gestureTurnApplied = gestureTurnApplied || armTurn.right
-  } else if (atJunction && (keys.turnRight || armTurn.right)) {
+    motionState.headingBefore = motionState.currentHeading
+    motionState.headingAfter = motionState.targetHeading
+    motionState.turnSource = 'keyboard'
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
+  } else if (atJunction && keys.turnRight) {
     motionState.targetHeading = MAIN_STREET_HEADING
-    gestureTurnApplied = gestureTurnApplied || armTurn.right
+    motionState.headingBefore = motionState.currentHeading
+    motionState.headingAfter = motionState.targetHeading
+    motionState.turnSource = 'keyboard'
+    clearTurnSideMovement(motionState, onRecalibrateBodyLean)
   }
 
   if (gestureTurnRequested) {
     motionState.armTurnTriggerAccepted = gestureTurnApplied
-    motionState.armTurnBlockedReason = gestureTurnApplied ? 'accepted' : 'not at turn point'
+    motionState.armTurnBlockedReason = gestureTurnApplied ? 'accepted' : 'gesture turn not applied'
   }
 
   if (motionState.currentAreaId === 'mainStreet') {
@@ -2014,269 +2266,219 @@ function turnPlayerAround(motionState, elapsed, trigger) {
   motionState.targetHeading = nextHeading
   motionState.turnAroundCooldownUntil = elapsed + TURN_AROUND_COOLDOWN_SECONDS
   motionState.turnAroundCooldownMs = TURN_AROUND_COOLDOWN_SECONDS * 1000
+  motionState.armTurnCooldownUntil = Math.max(
+    motionState.armTurnCooldownUntil ?? 0,
+    elapsed + ARM_TURN_COOLDOWN_SECONDS
+  )
+  motionState.armTurnCooldownMs = ARM_TURN_COOLDOWN_SECONDS * 1000
+  motionState.armTurnReleased = false
   motionState.lastTurnAroundTrigger = trigger
   motionState.lastTurnAroundTriggerUntil = elapsed + 1.4
+  motionState.lastTurnGesture = trigger === 'gesture' ? 'turnAround' : 'keyboardTurnAround'
+  motionState.lastTurnGestureUntil = elapsed + 1.4
 }
 
-function updateTurnAroundGestureState(motionState, pose, elapsed) {
-  const armsCrossed = getArmsCrossedForTurnAround(pose)
-  const cooldownRemaining = Math.max(0, motionState.turnAroundCooldownUntil - elapsed)
-  const result = { triggered: false }
+function applyWebcamArmHeadingTurn(motionState, direction) {
+  const headingBefore = motionState.targetHeading
+  const headingDelta = direction === 'left' ? -Math.PI / 2 : Math.PI / 2
+  const targetHeading = motionState.currentAreaId === 'leftStreet' && direction === 'right'
+    ? RETURN_FROM_LEFT_HEADING
+    : snapHeadingToQuarter(headingBefore + headingDelta)
 
-  motionState.armsCrossed = armsCrossed
+  motionState.targetHeading = targetHeading
+  motionState.headingBefore = headingBefore
+  motionState.headingAfter = targetHeading
+  motionState.turnSource = 'webcam'
+}
+
+function clearTurnSideMovement(motionState, onRecalibrateBodyLean) {
+  motionState.poseVx = 0
+  motionState.vx = 0
+  onRecalibrateBodyLean?.()
+}
+
+function updateTurnAroundGestureState(motionState, pose, motion, elapsed) {
+  void pose
+  void motion
+  const cooldownRemaining = Math.max(
+    0,
+    motionState.turnAroundCooldownUntil - elapsed,
+    motionState.armTurnCooldownUntil - elapsed
+  )
+
+  motionState.armsCrossed = false
+  motionState.armsCrossedDisabled = true
   motionState.turnAroundCooldownMs = cooldownRemaining * 1000
+  motionState.armTurnCooldownMs = Math.max(motionState.armTurnCooldownMs ?? 0, cooldownRemaining * 1000)
   if (motionState.lastTurnAroundTriggerUntil <= elapsed) {
     motionState.lastTurnAroundTrigger = 'none'
   }
-
-  if (!armsCrossed) {
-    motionState.armsCrossedSince = null
-    motionState.armsCrossedArmed = true
-    return result
+  if (motionState.lastTurnGestureUntil <= elapsed) {
+    motionState.lastTurnGesture = 'none'
   }
 
-  if (!motionState.armsCrossedSince) {
-    motionState.armsCrossedSince = elapsed
-  }
-
-  if (
-    motionState.armsCrossedArmed &&
-    cooldownRemaining <= 0 &&
-    elapsed - motionState.armsCrossedSince >= TURN_AROUND_HOLD_SECONDS
-  ) {
-    motionState.armsCrossedArmed = false
-    result.triggered = true
-  }
-
-  return result
+  return { triggered: false }
 }
 
-function getArmsCrossedForTurnAround(pose) {
-  const leftWrist = pose?.leftWrist
-  const rightWrist = pose?.rightWrist
-  const leftShoulder = pose?.leftShoulder
-  const rightShoulder = pose?.rightShoulder
-
-  if (
-    !isUsableWrist(leftWrist) ||
-    !isUsableWrist(rightWrist) ||
-    !isUsableWrist(leftShoulder) ||
-    !isUsableWrist(rightShoulder)
-  ) {
-    return false
-  }
-
-  const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2
-  const shoulderY = (leftShoulder.y + rightShoulder.y) / 2
-  const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x)
-  const minCross = Math.max(0.025, shoulderWidth * 0.1)
-  const chestTop = shoulderY - 0.12
-  const chestBottom = shoulderY + 0.24
-  const leftWristCrossed = leftWrist.x > shoulderCenterX + minCross
-  const rightWristCrossed = rightWrist.x < shoulderCenterX - minCross
-  const wristsAtChestHeight =
-    leftWrist.y >= chestTop &&
-    leftWrist.y <= chestBottom &&
-    rightWrist.y >= chestTop &&
-    rightWrist.y <= chestBottom
-
-  return leftWristCrossed && rightWristCrossed && wristsAtChestHeight
-}
-
-function updateArmTurnGestureState(motionState, pose, elapsed) {
-  const leftWristUsable = isUsableWrist(pose?.leftWrist)
-  const rightWristUsable = isUsableWrist(pose?.rightWrist)
+function updateArmTurnGestureState(motionState, pose, motion, elapsed) {
+  void motion
+  const gesture = getArmTurnGestureFlags(pose)
   const rawLeftWristX = Number.isFinite(pose?.leftWrist?.x) ? pose.leftWrist.x : 0.5
   const rawRightWristX = Number.isFinite(pose?.rightWrist?.x) ? pose.rightWrist.x : 0.5
-  const leftHistory = updateWristHistory(
-    motionState.leftWristHistory,
-    rawLeftWristX,
-    elapsed,
-    leftWristUsable,
-  )
-  const rightHistory = updateWristHistory(
-    motionState.rightWristHistory,
-    rawRightWristX,
-    elapsed,
-    rightWristUsable,
-  )
-  const leftSwipe = leftWristUsable
-    ? getSwipeDelta(leftHistory, rawLeftWristX, elapsed)
-    : createEmptySwipeDelta()
-  const rightSwipe = rightWristUsable
-    ? getSwipeDelta(rightHistory, rawRightWristX, elapsed)
-    : createEmptySwipeDelta()
-  const dominantSwipe = getDominantSwipe(leftSwipe, rightSwipe)
-  const swipeLeftDetected = dominantSwipe.direction === 'left'
-  const swipeRightDetected = dominantSwipe.direction === 'right'
-  const triggerAttempted = swipeLeftDetected || swipeRightDetected
-  const motionSettled =
-    Math.abs(leftSwipe.deltaX) < ARM_TURN_SETTLE_THRESHOLD &&
-    Math.abs(rightSwipe.deltaX) < ARM_TURN_SETTLE_THRESHOLD
   const cooldownRemaining = Math.max(0, motionState.armTurnCooldownUntil - elapsed)
-  const result = { left: false, right: false }
+  const directionalGestureActive = gesture.leftArmExtended || gesture.rightArmExtended
+  const exclusiveLeft = gesture.leftArmExtended && !gesture.rightArmExtended
+  const exclusiveRight = gesture.rightArmExtended && !gesture.leftArmExtended
 
   motionState.rawLeftWristX = rawLeftWristX
   motionState.rawRightWristX = rawRightWristX
-  motionState.leftWristHistory = leftHistory
-  motionState.rightWristHistory = rightHistory
-  motionState.leftWristDeltaX = leftSwipe.deltaX
-  motionState.rightWristDeltaX = rightSwipe.deltaX
-  motionState.leftArmOut = swipeLeftDetected
-  motionState.rightArmOut = swipeRightDetected
-  motionState.swipeLeftDetected = swipeLeftDetected
-  motionState.swipeRightDetected = swipeRightDetected
+  motionState.leftWristHistory = []
+  motionState.rightWristHistory = []
+  motionState.leftWristDeltaX = gesture.leftWristDeltaX
+  motionState.rightWristDeltaX = gesture.rightWristDeltaX
+  motionState.leftArmDistance = gesture.leftArmDistance
+  motionState.rightArmDistance = gesture.rightArmDistance
+  motionState.leftShoulderX = gesture.leftShoulderX
+  motionState.rightShoulderX = gesture.rightShoulderX
+  motionState.leftWristMinusShoulder = gesture.leftWristMinusShoulder
+  motionState.rightWristMinusShoulder = gesture.rightWristMinusShoulder
+  motionState.leftArmExtendedRaw = gesture.leftArmExtended
+  motionState.rightArmExtendedRaw = gesture.rightArmExtended
+  motionState.leftArmOut = gesture.leftArmExtended
+  motionState.rightArmOut = gesture.rightArmExtended
+  motionState.swipeLeftDetected = false
+  motionState.swipeRightDetected = false
   motionState.armTurnCooldownMs = cooldownRemaining * 1000
-  motionState.armTurnReleased = motionSettled
-  motionState.armTurnTriggerAttempted = triggerAttempted
-  motionState.armTurnTriggerAccepted = motionState.armTurnTriggeredUntil > elapsed
-  motionState.armTurnBlockedReason = getArmTurnBlockedReason({
-    cooldownRemaining,
-    isArmed: motionState.armTurnArmed,
-    leftWristUsable,
-    rightWristUsable,
-    motionSettled,
-    triggerAttempted,
-  })
+  motionState.turnGestureActive = gesture.anyActive
+  motionState.armTurnTriggerAttempted = false
+  motionState.armTurnTriggerAccepted = false
   if (motionState.armTurnTriggeredUntil <= elapsed) {
     motionState.armTurnTriggered = ''
   }
+  if (motionState.lastTurnGestureUntil <= elapsed) {
+    motionState.lastTurnGesture = 'none'
+  }
 
-  if (motionSettled) {
-    if (!motionState.armTurnSettledSince) {
-      motionState.armTurnSettledSince = elapsed
-    }
-    if (elapsed - motionState.armTurnSettledSince >= ARM_TURN_SETTLE_SECONDS) {
-      motionState.armTurnArmed = true
-    }
+  if (!gesture.anyActive) {
+    motionState.leftArmExtendedSince = null
+    motionState.rightArmExtendedSince = null
+    motionState.leftHoldMs = 0
+    motionState.rightHoldMs = 0
+    motionState.armTurnReleased = true
+    motionState.armTurnSettledSince = elapsed
+    motionState.armTurnArmed = true
+    motionState.armTurnBlockedReason = 'ready'
+    return { left: false, right: false }
+  }
+
+  if (exclusiveLeft) {
+    motionState.leftArmExtendedSince ??= elapsed
   } else {
-    motionState.armTurnSettledSince = null
+    motionState.leftArmExtendedSince = null
   }
 
-  if (!motionState.armTurnArmed || !triggerAttempted || cooldownRemaining > 0) {
-    return result
+  if (exclusiveRight) {
+    motionState.rightArmExtendedSince ??= elapsed
+  } else {
+    motionState.rightArmExtendedSince = null
   }
 
-  if (swipeLeftDetected) {
-    fireArmTurnGesture(motionState, elapsed, 'Q')
-    result.left = true
-  } else if (swipeRightDetected) {
-    fireArmTurnGesture(motionState, elapsed, 'E')
-    result.right = true
-  }
-
-  return result
-}
-
-function getDominantSwipe(leftSwipe, rightSwipe) {
-  const strongestSwipe = Math.abs(leftSwipe.deltaX) >= Math.abs(rightSwipe.deltaX)
-    ? leftSwipe
-    : rightSwipe
-
-  if (strongestSwipe.deltaX <= -ARM_TURN_SWIPE_THRESHOLD) {
-    return { direction: 'left', deltaX: strongestSwipe.deltaX }
-  }
-
-  if (strongestSwipe.deltaX >= ARM_TURN_SWIPE_THRESHOLD) {
-    return { direction: 'right', deltaX: strongestSwipe.deltaX }
-  }
-
-  return { direction: 'none', deltaX: strongestSwipe.deltaX }
-}
-
-function getArmTurnBlockedReason({
-  cooldownRemaining,
-  isArmed,
-  leftWristUsable,
-  rightWristUsable,
-  motionSettled,
-  triggerAttempted,
-}) {
-  if (!leftWristUsable && !rightWristUsable) {
-    return 'no usable wrist data'
-  }
-
-  if (!triggerAttempted) {
-    return motionSettled ? 'released/ready' : 'below swipe threshold'
-  }
+  motionState.leftHoldMs = motionState.leftArmExtendedSince === null
+    ? 0
+    : Math.max(0, (elapsed - motionState.leftArmExtendedSince) * 1000)
+  motionState.rightHoldMs = motionState.rightArmExtendedSince === null
+    ? 0
+    : Math.max(0, (elapsed - motionState.rightArmExtendedSince) * 1000)
 
   if (cooldownRemaining > 0) {
-    return 'cooldown'
+    motionState.armTurnBlockedReason = 'cooldown'
+    return { left: false, right: false }
   }
 
-  if (!isArmed) {
-    return 'waiting for release'
+  if (gesture.leftArmExtended && gesture.rightArmExtended) {
+    motionState.armTurnBlockedReason = 'both arms detected'
+    return { left: false, right: false }
   }
 
-  return 'accepted'
-}
-
-function isUsableWrist(wrist) {
-  if (!Number.isFinite(wrist?.x)) {
-    return false
+  if (!motionState.armTurnReleased || !motionState.armTurnArmed) {
+    motionState.armTurnBlockedReason = 'release gesture first'
+    return { left: false, right: false }
   }
 
-  const visibility = Number.isFinite(wrist.visibility) ? wrist.visibility : 1
-  const presence = Number.isFinite(wrist.presence) ? wrist.presence : 1
-  return visibility >= 0.2 && presence >= 0.2
-}
+  const leftHeld = exclusiveLeft && motionState.leftHoldMs >= ARM_TURN_HOLD_SECONDS * 1000
+  const rightHeld = exclusiveRight && motionState.rightHoldMs >= ARM_TURN_HOLD_SECONDS * 1000
 
-function updateWristHistory(history = [], x, elapsed, isUsable) {
-  const nextHistory = history.filter(
-    (sample) => elapsed - sample.elapsed <= ARM_TURN_MAX_WINDOW_SECONDS,
-  )
-
-  if (isUsable) {
-    nextHistory.push({ x, elapsed })
+  if (!leftHeld && !rightHeld) {
+    motionState.armTurnBlockedReason = directionalGestureActive ? 'hold turn gesture' : 'ready'
+    return { left: false, right: false }
   }
 
-  return nextHistory
-}
-
-function getSwipeDelta(history, currentX, elapsed) {
-  let strongestDelta = 0
-
-  for (const sample of history) {
-    const sampleAge = elapsed - sample.elapsed
-    if (
-      sampleAge < ARM_TURN_MIN_SAMPLE_SECONDS ||
-      sampleAge > ARM_TURN_MAX_WINDOW_SECONDS
-    ) {
-      continue
-    }
-
-    const deltaX = currentX - sample.x
-    if (Math.abs(deltaX) > Math.abs(strongestDelta)) {
-      strongestDelta = deltaX
-    }
-  }
-
-  return {
-    deltaX: strongestDelta,
-    leftDetected: strongestDelta <= -ARM_TURN_SWIPE_THRESHOLD,
-    rightDetected: strongestDelta >= ARM_TURN_SWIPE_THRESHOLD,
-  }
-}
-
-function createEmptySwipeDelta() {
-  return {
-    deltaX: 0,
-    leftDetected: false,
-    rightDetected: false,
-  }
-}
-
-function fireArmTurnGesture(motionState, elapsed, triggerKey) {
+  const turnDirection = leftHeld ? 'left' : 'right'
+  motionState.armTurnReleased = false
   motionState.armTurnArmed = false
-  motionState.armTurnBlockedReason = 'accepted'
+  motionState.armTurnTriggerAttempted = true
+  motionState.armTurnTriggered = turnDirection
+  motionState.armTurnTriggeredUntil = elapsed + 1.4
+  motionState.lastTurnGesture = turnDirection
+  motionState.lastTurnGestureUntil = elapsed + 1.4
   motionState.armTurnCooldownUntil = elapsed + ARM_TURN_COOLDOWN_SECONDS
   motionState.armTurnCooldownMs = ARM_TURN_COOLDOWN_SECONDS * 1000
-  motionState.armTurnTriggerAccepted = true
-  motionState.armTurnTriggered = triggerKey
-  motionState.armTurnTriggeredUntil = elapsed + 0.75
-  motionState.armTurnSettledSince = null
-  motionState.leftWristHistory = []
-  motionState.rightWristHistory = []
+  motionState.armTurnBlockedReason = 'attempted'
+
+  return { left: leftHeld, right: rightHeld }
+}
+
+function getArmTurnGestureFlags(pose) {
+  const leftShoulder = pose?.leftShoulder
+  const rightShoulder = pose?.rightShoulder
+  const leftWrist = pose?.leftWrist
+  const rightWrist = pose?.rightWrist
+
+  if (
+    !isValidLandmark(leftShoulder) ||
+    !isValidLandmark(rightShoulder) ||
+    !isValidLandmark(leftWrist) ||
+    !isValidLandmark(rightWrist)
+  ) {
+    return {
+      anyActive: false,
+      armsCrossed: false,
+      leftArmDistance: 0,
+      leftArmExtended: false,
+      leftShoulderX: 0.5,
+      leftWristDeltaX: 0,
+      leftWristMinusShoulder: 0,
+      rightArmDistance: 0,
+      rightArmExtended: false,
+      rightShoulderX: 0.5,
+      rightWristDeltaX: 0,
+      rightWristMinusShoulder: 0,
+    }
+  }
+
+  const leftWristMinusShoulder = leftWrist.x - leftShoulder.x
+  const rightWristMinusShoulder = rightWrist.x - rightShoulder.x
+  const leftArmDistance = Math.abs(leftWristMinusShoulder)
+  const rightArmDistance = Math.abs(rightWristMinusShoulder)
+  const leftWristDeltaX = leftArmDistance
+  const rightWristDeltaX = rightArmDistance
+  const leftArmExtended = leftArmDistance > ARM_TURN_DISTANCE_THRESHOLD
+  const rightArmExtended = rightArmDistance > ARM_TURN_DISTANCE_THRESHOLD
+
+  return {
+    anyActive: leftArmExtended || rightArmExtended,
+    armsCrossed: false,
+    leftArmDistance,
+    leftArmExtended,
+    leftShoulderX: leftShoulder.x,
+    leftWristDeltaX,
+    leftWristMinusShoulder,
+    rightArmDistance,
+    rightArmExtended,
+    rightShoulderX: rightShoulder.x,
+    rightWristDeltaX,
+    rightWristMinusShoulder,
+  }
 }
 
 function isNearLeftStreetJunction(motionState) {
@@ -2291,23 +2493,37 @@ function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, 
   motionState.lastDebugAt = elapsed
   const currentSceneStats = countSceneObjects(scene)
   const mapPlayer = getWorldMapPlayerPosition(motionState)
+  const avatarWorldPosition = getAvatarWorldMapPosition(motionState)
+  const mapParts = motionState.mapPartDebug ?? []
 
   perfState.meshCount = currentSceneStats.meshCount
   perfState.totalObjects = currentSceneStats.totalObjects
   perfState.visibleObjects = currentSceneStats.visibleObjects
   onWorldDebug({
     avatarBaseYaw: AVATAR_BASE_YAW,
+    avatarWorldX: avatarWorldPosition.x,
+    avatarWorldZ: avatarWorldPosition.z,
     currentAreaId: motionState.currentAreaId,
+    currentHeading: motionState.currentHeading,
     effectiveAvatarYaw: motionState.facingAngle,
     facingAngle: motionState.facingAngle,
     heading: motionState.currentHeading,
+    headingAfter: motionState.headingAfter ?? motionState.targetHeading,
+    headingBefore: motionState.headingBefore ?? motionState.currentHeading,
+    idleDetected: Boolean(tracking?.motion?.idleDetected),
     armTurnCooldownMs: motionState.armTurnCooldownMs ?? 0,
+    turnGestureCooldownMs: motionState.armTurnCooldownMs ?? 0,
+    triggerBlockedReason: motionState.armTurnBlockedReason ?? 'ready',
     armTurnReleased: motionState.armTurnReleased ?? true,
     armTurnBlockedReason: motionState.armTurnBlockedReason ?? 'ready',
     armTurnTriggerAccepted: motionState.armTurnTriggerAccepted ?? false,
     armTurnTriggerAttempted: motionState.armTurnTriggerAttempted ?? false,
+    gestureTriggerAccepted: motionState.armTurnTriggerAccepted ?? false,
+    gestureTriggerAttempted: motionState.armTurnTriggerAttempted ?? false,
     armTurnTriggered: motionState.armTurnTriggered ?? '',
     armsCrossed: motionState.armsCrossed ?? false,
+    armsCrossedDisabled: motionState.armsCrossedDisabled ?? true,
+    lastTurnGesture: motionState.lastTurnGesture ?? 'none',
     lastTurnAroundTrigger: motionState.lastTurnAroundTrigger ?? 'none',
     turnAroundCooldownMs: motionState.turnAroundCooldownMs ?? 0,
     keyboardActive: motionState.keyboardActive,
@@ -2316,16 +2532,37 @@ function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, 
     keyboardSide: motionState.keyboardSide,
     keyboardSpeedMultiplier: KEYBOARD_SPEED_MULTIPLIER,
     keyboardSmoothing: KEYBOARD_MOVEMENT_SMOOTHING,
+    finalLateralMovement: motionState.vx,
     lateralOffset: motionState.lateralOffset,
     leftWristAvatarX: motionState.leftWristAvatarX ?? 0,
+    leftArmDetected: motionState.leftArmExtendedRaw ?? false,
+    leftArmDistance: motionState.leftArmDistance ?? 0,
+    leftArmExtended: motionState.leftArmOut ?? false,
+    leftArmExtendedRaw: motionState.leftArmExtendedRaw ?? false,
     leftArmOut: motionState.leftArmOut ?? false,
+    leftHoldMs: motionState.leftHoldMs ?? 0,
+    leftShoulderX: motionState.leftShoulderX ?? 0.5,
     leftWristDeltaX: motionState.leftWristDeltaX ?? 0,
+    leftWristMinusShoulder: motionState.leftWristMinusShoulder ?? 0,
+    armTurnDistanceThreshold: ARM_TURN_DISTANCE_THRESHOLD,
+    armTurnTestThreshold: ARM_TURN_DISTANCE_THRESHOLD,
     rawLeftWristX: motionState.rawLeftWristX ?? 0.5,
     movementSmoothing: MEDIAPIPE_MOVEMENT_SMOOTHING,
     localForward: mapPlayer.localForward,
     localLateral: mapPlayer.localLateral,
+    nearbyPartMapX: motionState.pickupDebug?.nearbyPartMapX ?? null,
+    nearbyPartMapY: motionState.pickupDebug?.nearbyPartMapY ?? null,
+    nearbyPartWorldX: motionState.pickupDebug?.nearbyPartWorldX ?? null,
+    nearbyPartWorldZ: motionState.pickupDebug?.nearbyPartWorldZ ?? null,
     mapPlayerX: mapPlayer.x,
     mapPlayerY: mapPlayer.y,
+    mapParts,
+    nearestPartId: motionState.pickupDebug?.nearbyPartId ?? 'none',
+    playerArrowRotation: mapPlayer.playerArrowRotation,
+    playerMapX: motionState.pickupDebug?.playerMapX ?? mapPlayer.x,
+    playerMapY: motionState.pickupDebug?.playerMapY ?? mapPlayer.y,
+    playerPickupWorldX: motionState.pickupDebug?.playerPickupWorldX ?? mapPlayer.worldX,
+    playerPickupWorldZ: motionState.pickupDebug?.playerPickupWorldZ ?? mapPlayer.worldZ,
     occlusionCameraInsideBuilding: occlusionState?.debug?.cameraInsideBuilding ?? false,
     occlusionFadedCount: occlusionState?.debug?.fadedCount ?? 0,
     occlusionFadedIds: occlusionState?.debug?.fadedIds ?? [],
@@ -2337,17 +2574,29 @@ function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, 
     screenLeftWristSource: motionState.screenLeftWristSource ?? 'none',
     screenRightKneeSource: motionState.screenRightKneeSource ?? 'none',
     rightWristAvatarX: motionState.rightWristAvatarX ?? 0,
+    rightArmDetected: motionState.rightArmExtendedRaw ?? false,
+    rightArmDistance: motionState.rightArmDistance ?? 0,
+    rightArmExtended: motionState.rightArmOut ?? false,
+    rightArmExtendedRaw: motionState.rightArmExtendedRaw ?? false,
     rightArmOut: motionState.rightArmOut ?? false,
+    rightHoldMs: motionState.rightHoldMs ?? 0,
+    rightShoulderX: motionState.rightShoulderX ?? 0.5,
     rightWristDeltaX: motionState.rightWristDeltaX ?? 0,
+    rightWristMinusShoulder: motionState.rightWristMinusShoulder ?? 0,
     rawRightWristX: motionState.rawRightWristX ?? 0.5,
     screenRightWristSource: motionState.screenRightWristSource ?? 'none',
     swipeLeftDetected: motionState.swipeLeftDetected ?? false,
     swipeRightDetected: motionState.swipeRightDetected ?? false,
+    trackingStable: Boolean(tracking?.motion?.trackingStable),
+    turnSource: motionState.turnSource ?? 'none',
+    turnGestureActive: Boolean(motionState.turnGestureActive),
     yawInfluence: AVATAR_YAW_INFLUENCE,
     scrolling: motionState.scrolling,
     smoothedSpeed: motionState.smoothedSpeed,
     playerWorldX: motionState.playerWorldX,
     playerWorldZ: motionState.playerWorldZ,
+    distanceToNearestPart: motionState.pickupDebug?.pickupDistance ?? null,
+    distancePlayerToNearbyPartOnMap: motionState.pickupDebug?.distancePlayerToNearbyPartOnMap ?? null,
     worldZ: motionState.worldTravel,
     perf: {
       avgAmbientMs: perfState.avgAmbientMs,
@@ -2408,106 +2657,98 @@ function publishMapData(motionState, parts, onMapData, elapsed) {
   }
 
   motionState.lastMapAt = elapsed
+  const mapParts = parts.map((part) => getPartMapData(part))
+  motionState.mapPartDebug = mapParts.map((part) => ({
+    areaId: part.areaId,
+    id: part.id,
+    mapX: part.mapX,
+    mapY: part.mapY,
+    worldX: part.worldX,
+    worldZ: part.worldZ,
+  }))
+
   onMapData({
     areaId: motionState.currentAreaId,
     player: getMapPlayerPosition(motionState),
-    parts: parts.map((part) => ({
-      collected: part.collected,
-      areaId: part.areaId ?? 'mainStreet',
-      id: part.id,
-      label: part.label,
-      ...getPartMapPosition(part.id),
-    })),
+    parts: mapParts,
     transitionLabel: motionState.transitionLabelUntil > elapsed ? motionState.transitionLabel : '',
     turnHint: motionState.turnHint,
   })
 }
 
-function getMapPlayerPosition(motionState) {
-  const mapPosition = getWorldMapPlayerPosition(motionState)
+function getPartMapData(part) {
+  const partPickupWorldPosition = getPartPickupWorldPosition(part)
 
   return {
+    collected: part.collected,
+    id: part.id,
+    label: part.label,
+    ...partToMapMarker({
+      ...part,
+      x: partPickupWorldPosition.x,
+      z: partPickupWorldPosition.z,
+    }),
+  }
+}
+
+function getMapPlayerPosition(motionState) {
+  const worldPosition = getPlayerPickupWorldPosition(motionState)
+  const mapPosition = playerToMapMarker({
+    areaId: motionState.currentAreaId,
+    currentHeading: motionState.currentHeading,
+    worldX: worldPosition.x,
+    worldZ: worldPosition.z,
+  })
+
+  return {
+    areaId: mapPosition.areaId,
+    localForward: mapPosition.localForward,
+    localLateral: mapPosition.localLateral,
+    mapX: mapPosition.mapX,
+    mapY: mapPosition.mapY,
+    playerArrowRotation: mapPosition.playerArrowRotation,
     progress: mapPosition.y,
     side: getStreetSideLabel(mapPosition.localLateral),
     sidePosition: mapPosition.x,
+    worldX: worldPosition.x,
+    worldZ: worldPosition.z,
     x: mapPosition.x,
     y: mapPosition.y,
   }
 }
 
 function getWorldMapPlayerPosition(motionState) {
-  return worldToMapPlayerPosition(
-    motionState.playerWorldX,
-    motionState.playerWorldZ,
-    motionState.currentAreaId,
-    motionState.currentHeading,
-    motionState.lateralOffset,
-  )
+  const worldPosition = getPlayerPickupWorldPosition(motionState)
+
+  return playerToMapMarker({
+    areaId: motionState.currentAreaId,
+    currentHeading: motionState.currentHeading,
+    worldX: worldPosition.x,
+    worldZ: worldPosition.z,
+  })
 }
 
-function worldToMapPlayerPosition(playerWorldX, playerWorldZ, currentAreaId, currentHeading, lateralOffset) {
-  const streetHeading = getMapStreetHeading(currentAreaId, currentHeading)
-  const streetForward = forwardVectorFromHeading(streetHeading)
-  const streetRight = rightVectorFromHeading(streetHeading)
-  const playerRight = rightVectorFromHeading(currentHeading)
-  const playerPosition = new THREE.Vector3(playerWorldX, 0, playerWorldZ)
-    .add(playerRight.multiplyScalar(lateralOffset))
-  const streetOrigin = currentAreaId === 'leftStreet'
-    ? new THREE.Vector3(MAP_LEFT_INTERSECTION_X, 0, LEFT_STREET_ENTRANCE_Z)
-    : new THREE.Vector3(0, 0, 0)
-  const streetDelta = playerPosition.clone().sub(streetOrigin)
-  const localForward = streetDelta.dot(streetForward)
-  const localLateral = streetDelta.dot(streetRight)
+function getPlayerPickupWorldPosition(motionState) {
+  const pickupWorldX = motionState.pickupDebug?.playerPickupWorldX
+  const pickupWorldZ = motionState.pickupDebug?.playerPickupWorldZ
 
-  if (currentAreaId === 'leftStreet') {
-    const leftProgress = THREE.MathUtils.clamp(localForward / MAP_LEFT_BRANCH_LENGTH, 0, 1)
-
+  if (Number.isFinite(pickupWorldX) && Number.isFinite(pickupWorldZ)) {
     return {
-      localForward,
-      localLateral,
-      x: THREE.MathUtils.clamp(
-        MAP_LEFT_STREET.endX - leftProgress * (MAP_LEFT_STREET.endX - MAP_LEFT_STREET.startX),
-        MAP_LEFT_STREET.startX,
-        MAP_LEFT_STREET.endX,
-      ),
-      y: THREE.MathUtils.clamp(
-        MAP_LEFT_STREET.centerY - localLateral / MAP_LATERAL_TO_POSITION_SCALE,
-        MAP_LEFT_STREET.centerY - MAP_LEFT_STREET.halfWidth * 0.72,
-        MAP_LEFT_STREET.centerY + MAP_LEFT_STREET.halfWidth * 0.72,
-      ),
+      x: pickupWorldX,
+      z: pickupWorldZ,
     }
   }
 
+  return getAvatarWorldMapPosition(motionState)
+}
+
+function getAvatarWorldMapPosition(motionState) {
+  const avatarScenePosition = getAvatarScenePickupPosition(motionState)
+
   return {
-    localForward,
-    localLateral,
-    x: projectMainStreetPlayerSide(localLateral),
-    y: THREE.MathUtils.clamp(
-      MAP_MAIN_START_Y - localForward / MAP_MAIN_Z_TO_Y_SCALE,
-      0.08,
-      0.92,
-    ),
+    x: motionState.playerWorldX + avatarScenePosition.x,
+    z: motionState.playerWorldZ + avatarScenePosition.z,
   }
-}
-
-function getMapStreetHeading(currentAreaId, currentHeading) {
-  if (currentAreaId === 'leftStreet') {
-    return LEFT_STREET_HEADING
-  }
-
-  if (currentAreaId === 'mainStreet') {
-    return MAIN_STREET_HEADING
-  }
-
-  return currentHeading
-}
-
-function projectMainStreetPlayerSide(x) {
-  return THREE.MathUtils.clamp(
-    MAP_MAIN_STREET.centerX + x / MAP_LATERAL_TO_POSITION_SCALE,
-    MAP_MAIN_STREET.centerX - MAP_MAIN_STREET.halfWidth * 0.72,
-    MAP_MAIN_STREET.centerX + MAP_MAIN_STREET.halfWidth * 0.72,
-  )
 }
 
 function getStreetSideLabel(x) {
@@ -2528,6 +2769,12 @@ function angleDelta(current, target) {
 
 function normalizeAngle(angle) {
   return Math.atan2(Math.sin(angle), Math.cos(angle))
+}
+
+function snapHeadingToQuarter(angle) {
+  const quarterTurn = Math.PI / 2
+
+  return normalizeAngle(Math.round(normalizeAngle(angle) / quarterTurn) * quarterTurn)
 }
 
 function applyWalkCycle(points, motionState) {
@@ -2889,6 +3136,7 @@ function easeInOutCubic(value) {
 
 function findNearbyPart(parts, avatarMotion) {
   let nearest = null
+  let nearestCalibration = null
   let nearestDistance = Infinity
   const worldOffsetX = -avatarMotion.playerWorldX
   const worldOffsetZ = (-avatarMotion.playerWorldZ) % STREET_REPEAT
@@ -2896,11 +3144,13 @@ function findNearbyPart(parts, avatarMotion) {
   let handlebarDebug = null
 
   for (const part of parts) {
-    const visibleZ = part.z + worldOffsetZ
-    const visibleX = part.x + worldOffsetX
+    const partPickupWorldPosition = getPartPickupWorldPosition(part)
+    const visibleZ = partPickupWorldPosition.z + worldOffsetZ
+    const visibleX = partPickupWorldPosition.x + worldOffsetX
     const dx = visibleX - avatarScenePosition.x
     const dz = visibleZ - avatarScenePosition.z
     const distance = Math.hypot(dx * 0.9, dz)
+    const playerPickupWorldPosition = getPlayerPickupWorldPositionFromSceneDelta(partPickupWorldPosition, dx, dz)
 
     if (part.id === 'handlebar') {
       handlebarDebug = {
@@ -2916,22 +3166,73 @@ function findNearbyPart(parts, avatarMotion) {
 
     if (Math.abs(dx) < 1.45 && Math.abs(dz) < 2.2 && distance < nearestDistance) {
       nearest = part
+      nearestCalibration = {
+        areaId: part.areaId ?? 'mainStreet',
+        dx,
+        dz,
+        partWorldX: partPickupWorldPosition.x,
+        partWorldZ: partPickupWorldPosition.z,
+        playerWorldX: playerPickupWorldPosition.x,
+        playerWorldZ: playerPickupWorldPosition.z,
+      }
       nearestDistance = distance
     }
   }
+
+  const nearestPartMapPosition = nearestCalibration
+    ? partToMapMarker({
+      areaId: nearestCalibration.areaId,
+      x: nearestCalibration.partWorldX,
+      z: nearestCalibration.partWorldZ,
+    })
+    : null
+  const playerMapPosition = nearestCalibration
+    ? playerToMapMarker({
+      areaId: avatarMotion.currentAreaId,
+      currentHeading: avatarMotion.currentHeading,
+      worldX: nearestCalibration.playerWorldX,
+      worldZ: nearestCalibration.playerWorldZ,
+    })
+    : null
+  const distancePlayerToNearbyPartOnMap = nearestPartMapPosition && playerMapPosition
+    ? Math.hypot(playerMapPosition.mapX - nearestPartMapPosition.mapX, playerMapPosition.mapY - nearestPartMapPosition.mapY)
+    : null
 
   avatarMotion.pickupDebug = {
     avatarSceneX: avatarScenePosition.x,
     avatarSceneZ: avatarScenePosition.z,
     currentAreaId: avatarMotion.currentAreaId,
+    distancePlayerToNearbyPartOnMap,
     handlebarDistance: handlebarDebug?.distance ?? null,
     handlebarSceneX: handlebarDebug?.sceneX ?? null,
     handlebarSceneZ: handlebarDebug?.sceneZ ?? null,
+    nearbyPartMapX: nearestPartMapPosition?.mapX ?? null,
+    nearbyPartMapY: nearestPartMapPosition?.mapY ?? null,
+    nearbyPartWorldX: nearestCalibration?.partWorldX ?? null,
+    nearbyPartWorldZ: nearestCalibration?.partWorldZ ?? null,
     nearbyPartId: nearest?.id ?? 'none',
+    playerMapX: playerMapPosition?.mapX ?? null,
+    playerMapY: playerMapPosition?.mapY ?? null,
+    playerPickupWorldX: nearestCalibration?.playerWorldX ?? null,
+    playerPickupWorldZ: nearestCalibration?.playerWorldZ ?? null,
     pickupDistance: Number.isFinite(nearestDistance) ? nearestDistance : null,
   }
 
   return nearest
+}
+
+function getPartPickupWorldPosition(part) {
+  return {
+    x: part.x,
+    z: part.z,
+  }
+}
+
+function getPlayerPickupWorldPositionFromSceneDelta(partWorldPosition, dx, dz) {
+  return {
+    x: partWorldPosition.x - dx,
+    z: partWorldPosition.z - dz,
+  }
 }
 
 function getAvatarScenePickupPosition(avatarMotion) {
