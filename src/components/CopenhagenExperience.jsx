@@ -7,7 +7,6 @@ import { partToMapMarker } from "../game/mapMarkers";
 import { useCopenhagenTracking } from "../hooks/useCopenhagenTracking";
 import { useMapGestureToggle } from "../hooks/useMapGestureToggle";
 import { CollectionPanel } from "./CollectionPanel";
-import { DebugPanel } from "./DebugPanel";
 import { ThreeStreetScene } from "./ThreeStreetScene";
 import { TownMap } from "./TownMap";
 import { LEFT_STREET_ENTRANCE_Z } from "../scene/constants";
@@ -39,7 +38,6 @@ const DEFAULT_MAP_DATA = {
   turnHint: "",
 };
 
-const DEBUG_OPEN_STORAGE_KEY = "copenhagenBikeGame.debugOpen";
 const FINAL_PICKUP_DELAY_MS = 1200;
 const CELEBRATION_DURATION_MS = 2100;
 
@@ -191,25 +189,17 @@ export function CopenhagenExperience({ onBackToCities }) {
   const walkStartWorldZRef = useRef(null);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [guideStep, setGuideStep] = useState(GUIDE_STEPS.WALK);
-  const [guideCompletedWalk, setGuideCompletedWalk] = useState(false);
-  const [guideCompletedLeft, setGuideCompletedLeft] = useState(false);
-  const [guideCompletedRight, setGuideCompletedRight] = useState(false);
-  const [mapGuideCompleted, setMapGuideCompleted] = useState(false);
+  const [, setGuideCompletedWalk] = useState(false);
+  const [, setGuideCompletedLeft] = useState(false);
+  const [, setGuideCompletedRight] = useState(false);
+  const [, setMapGuideCompleted] = useState(false);
   const [pickupGuideCompleted, setPickupGuideCompleted] = useState(false);
   const [turnGuideCompleted, setTurnGuideCompleted] = useState(false);
   const [isKeyboardHelpOpen, setIsKeyboardHelpOpen] = useState(false);
   const [completionPhase, setCompletionPhase] = useState("idle");
   const [completionFact, setCompletionFact] = useState("");
-  const [completionTriggered, setCompletionTriggered] = useState(false);
   const [postcardVisible, setPostcardVisible] = useState(false);
   const [runResetKey, setRunResetKey] = useState(0);
-  const [isDebugOpen, setIsDebugOpen] = useState(() => {
-    try {
-      return window.localStorage.getItem(DEBUG_OPEN_STORAGE_KEY) === "true";
-    } catch {
-      return false;
-    }
-  });
   const [mapData, setMapData] = useState(DEFAULT_MAP_DATA);
   const [worldDebug, setWorldDebug] = useState(DEFAULT_WORLD_DEBUG);
   const [pickupDebug, setPickupDebug] = useState({
@@ -238,16 +228,12 @@ export function CopenhagenExperience({ onBackToCities }) {
   const toggleMap = useCallback(() => {
     setIsMapOpen((current) => !current);
   }, []);
-  const mapGestureDebug = useMapGestureToggle({
+  useMapGestureToggle({
     onToggle: toggleMap,
     pose: tracking.pose,
   });
   const completionActive = completionPhase !== "idle" && completionPhase !== "dismissed";
   const activeGuideStep = isRunning && !completionActive ? guideStep : GUIDE_STEPS.HIDDEN;
-
-  const handleBackToCities = useCallback(() => {
-    onBackToCities?.();
-  }, [onBackToCities]);
 
   const clearCompletionTimers = useCallback(() => {
     window.clearTimeout(finalPickupTimerRef.current);
@@ -260,7 +246,6 @@ export function CopenhagenExperience({ onBackToCities }) {
     clearCompletionTimers();
     completionTriggeredRef.current = false;
     setCompletionPhase("idle");
-    setCompletionTriggered(false);
     setPostcardVisible(false);
     setCompletionFact("");
     setIsMapOpen(false);
@@ -289,6 +274,14 @@ export function CopenhagenExperience({ onBackToCities }) {
     setRunResetKey((key) => key + 1);
   }, [clearCompletionTimers]);
 
+  const handleResultBackToCities = useCallback(() => {
+    clearCompletionTimers();
+    completionTriggeredRef.current = false;
+    setCompletionPhase("dismissed");
+    setPostcardVisible(false);
+    onBackToCities?.();
+  }, [clearCompletionTimers, onBackToCities]);
+
   const handlePickupDebug = useCallback((nextPickupDebug) => {
     setPickupDebug(nextPickupDebug);
 
@@ -302,7 +295,6 @@ export function CopenhagenExperience({ onBackToCities }) {
     }
 
     completionTriggeredRef.current = true;
-    setCompletionTriggered(true);
     setCompletionPhase("finalPickup");
     setGuideStep(GUIDE_STEPS.HIDDEN);
     setCompletionFact(COMPLETION_FACTS[Math.floor(Math.random() * COMPLETION_FACTS.length)]);
@@ -318,14 +310,6 @@ export function CopenhagenExperience({ onBackToCities }) {
   }, []);
 
   useEffect(() => () => clearCompletionTimers(), [clearCompletionTimers]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(DEBUG_OPEN_STORAGE_KEY, String(isDebugOpen));
-    } catch {
-      // Debug persistence is optional; the panel still works without storage.
-    }
-  }, [isDebugOpen]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -530,22 +514,6 @@ export function CopenhagenExperience({ onBackToCities }) {
   }, [turnGuideCompleted, worldDebug.turnSource]);
 
   const progressParts = pickupDebug.parts ?? FALLBACK_PARTS;
-  const collectedCount = progressParts.filter((part) => part.collected).length;
-  const totalParts = progressParts.length;
-  const nearIntersectionGuideZone =
-    Math.abs((worldDebug.playerWorldZ ?? 0) - LEFT_STREET_ENTRANCE_Z) < INTERSECTION_GUIDE_RANGE &&
-    worldDebug.currentAreaId === "mainStreet";
-  const guideDebug = {
-    activeGuideStep,
-    guideVisible: activeGuideStep !== GUIDE_STEPS.HIDDEN,
-    guideCompletedWalk,
-    guideCompletedLeft,
-    guideCompletedRight,
-    mapGuideCompleted,
-    nearIntersectionGuideZone,
-    pickupGuideCompleted,
-    turnGuideCompleted,
-  };
 
   return (
     <>
@@ -570,7 +538,7 @@ export function CopenhagenExperience({ onBackToCities }) {
             tracking={tracking}
           />
 
-          {isRunning && (
+          {isRunning && !postcardVisible && (
             <div className="webcam-preview">
               <Webcam
                 ref={webcamRef}
@@ -584,22 +552,6 @@ export function CopenhagenExperience({ onBackToCities }) {
               <canvas ref={canvasRef} className="landmark-layer" aria-hidden="true" />
             </div>
           )}
-
-          <DebugPanel
-            collectedCount={collectedCount}
-            completionTriggered={completionTriggered}
-            currentAreaId={mapData.areaId}
-            isOpen={isDebugOpen}
-            isMapOpen={isMapOpen}
-            mapGestureDebug={mapGestureDebug}
-            guideDebug={guideDebug}
-            onToggle={() => setIsDebugOpen((current) => !current)}
-            postcardVisible={postcardVisible}
-            pickupDebug={pickupDebug}
-            totalParts={totalParts}
-            tracking={tracking}
-            worldDebug={worldDebug}
-          />
 
           {pickupDebug.nearbyPart !== "none" &&
             !completionActive &&
@@ -635,43 +587,20 @@ export function CopenhagenExperience({ onBackToCities }) {
             open={isKeyboardHelpOpen}
             onToggle={(event) => setIsKeyboardHelpOpen(event.currentTarget.open)}
           >
-            <summary>Keyboard Help</summary>
+            <summary aria-label={isKeyboardHelpOpen ? "Close keyboard help" : "Open keyboard help"}>
+              <svg className="keyboard-help-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M5 3.8v14.9l3.8-3.4 2.5 5.3 2.8-1.3-2.5-5.1 5.1-.5L5 3.8Z" />
+              </svg>
+            </summary>
             <div className="keyboard-help-panel">
-              <strong>Keyboard Controls</strong>
-
-              <section>
-                <h2>Movement</h2>
-                <p><kbd>↑</kbd> or <kbd>W</kbd> = Walk forward</p>
-                <p><kbd>←</kbd> or <kbd>A</kbd> = Move left</p>
-                <p><kbd>→</kbd> or <kbd>D</kbd> = Move right</p>
-              </section>
-
-              <section>
-                <h2>Actions</h2>
-                <p><kbd>↓</kbd> or <kbd>S</kbd> = Bend / Pick up item</p>
-              </section>
-
-              <section>
-                <h2>Turning</h2>
-                <p><kbd>Q</kbd> = Turn left at intersections</p>
-                <p><kbd>E</kbd> = Turn right / return to Main Street</p>
-                <p><kbd>R</kbd> = Turn around</p>
-              </section>
-
-              <section>
-                <h2>Map</h2>
-                <p><kbd>M</kbd> = Open / Close map</p>
-              </section>
-
-              <section>
-                <h2>Gestures</h2>
-                <p>Left arm out = Turn left</p>
-                <p>Right arm out = Turn right</p>
-              </section>
-
-              <p className="keyboard-help-note">
-                All actions can also be performed using body gestures.
-              </p>
+              <strong>Keyboard controls</strong>
+              <p><kbd>↑</kbd> / <kbd>W</kbd> = Walk forward</p>
+              <p><kbd>←</kbd> / <kbd>A</kbd> = Move left</p>
+              <p><kbd>→</kbd> / <kbd>D</kbd> = Move right</p>
+              <p><kbd>↓</kbd> / <kbd>S</kbd> = Bend / pick up</p>
+              <p><kbd>Q</kbd> = Turn left</p>
+              <p><kbd>E</kbd> = Turn right</p>
+              <p><kbd>M</kbd> = Open / close map</p>
             </div>
           </details>
 
@@ -693,50 +622,93 @@ export function CopenhagenExperience({ onBackToCities }) {
 
           {isMapOpen && <TownMap mapData={mapData} onClose={() => setIsMapOpen(false)} />}
 
+          {!isRunning && (
+            <CopenhagenStartOverlay
+              isLoading={isLoading}
+              onStartCamera={startCamera}
+            />
+          )}
+
           {postcardVisible && (
-            <div className="completion-postcard-backdrop" aria-live="polite">
-              <section className="completion-postcard">
-                <span>Copenhagen Postcard</span>
-                <h2>You found all bike parts!</h2>
-                <p>Here is your completed bicycle.</p>
-                <img
-                  className="completion-bike-image"
-                  src={completedBicycleIllustration}
-                  alt="Completed bicycle illustration"
-                />
-                <div className="completion-fun-fact">
-                  <span>Fun Fact</span>
-                  <blockquote>{completionFact}</blockquote>
-                </div>
-                <div className="completion-actions">
-                  <button type="button" className="action-btn btn-ghost" onClick={handleBackToCities}>
-                    Back to Cities
-                  </button>
-                  <button type="button" className="action-btn btn-amber" onClick={handlePlayAgain}>
-                    Play Again
-                  </button>
-                </div>
-              </section>
-            </div>
+            <CopenhagenResultOverlay
+              completionFact={completionFact}
+              onBackToCities={handleResultBackToCities}
+              onPlayAgain={handlePlayAgain}
+            />
           )}
 
           <CollectionPanel parts={progressParts} />
-
-          {!isRunning && (
-            <button
-              type="button"
-              className="camera-start action-btn btn-dark"
-              onClick={startCamera}
-              disabled={isLoading}
-            >
-              {isLoading ? "Loading MediaPipe..." : "Start camera"}
-            </button>
-          )}
 
           <div ref={puckRef} className="hidden-tracking-puck" aria-hidden="true" />
         </div>
       </section>
     </>
+  );
+}
+
+function CopenhagenStartOverlay({
+  isLoading,
+  onStartCamera,
+}) {
+  return (
+    <div className="round-overlay copenhagen-start-overlay" aria-live="polite">
+      <p className="round-overlay-eyebrow">Copenhagen challenge</p>
+      <strong>Bike Hunt Copenhagen</strong>
+      <section className="how-to-play-card copenhagen-how-to-card" aria-label="How to play Bike Hunt Copenhagen">
+        <p className="copenhagen-guide-intro">
+          The ghost guide will show you what to do during your journey.
+        </p>
+        <span className="how-to-play-label">How to play</span>
+        <ul className="how-to-play-steps">
+          <li>Move your arms and legs to walk forward</li>
+          <li>Move your body left or right to slide sideways</li>
+          <li>Bend down to pick up bike parts</li>
+          <li>Raise both hands to open and close the map</li>
+          <li>Stretch your left arm to turn left</li>
+          <li>Stretch your right arm to turn right</li>
+        </ul>
+      </section>
+      <button
+        type="button"
+        className="action-btn btn-teal copenhagen-start-button"
+        onClick={onStartCamera}
+        disabled={isLoading}
+      >
+        {isLoading ? "Loading MediaPipe..." : "Start game"}
+      </button>
+      <p className="hover-hint">Point your body at the camera</p>
+    </div>
+  );
+}
+
+function CopenhagenResultOverlay({
+  completionFact,
+  onBackToCities,
+  onPlayAgain,
+}) {
+  return (
+    <div className="round-overlay copenhagen-result-overlay" aria-live="polite">
+      <p className="round-overlay-eyebrow">Bike complete</p>
+      <strong>You found all bike parts!</strong>
+      <img
+        className="copenhagen-result-bike"
+        src={completedBicycleIllustration}
+        alt="Completed bicycle illustration"
+      />
+      <div className="fun-fact-card copenhagen-result-fact">
+        <span className="fun-fact-label">Copenhagen fun fact</span>
+        <p className="fun-fact-text">{completionFact}</p>
+      </div>
+      <div className="post-round-actions copenhagen-result-actions">
+        <button type="button" className="action-btn btn-amber" onClick={onPlayAgain}>
+          Play again
+        </button>
+        <button type="button" className="action-btn btn-ghost copenhagen-map-button" onClick={onBackToCities}>
+          Back to map
+        </button>
+      </div>
+      <p className="hover-hint">Choose an option to continue</p>
+    </div>
   );
 }
 
