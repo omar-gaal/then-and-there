@@ -75,6 +75,9 @@ export function DebugPanel({
           <span>avatarWorldZ: {formatSpeed(worldDebug.avatarWorldZ)}</span>
           <span>player world x/z: {formatDebugPoint(worldDebug.playerWorldX, worldDebug.playerWorldZ)}</span>
           <span>currentAreaId: {worldDebug.currentAreaId ?? currentAreaId}</span>
+          <span>street bounds: {worldDebug.boundaryStreetId ?? 'mainStreet'} [{formatSpeed(worldDebug.boundaryMinLateral)}, {formatSpeed(worldDebug.boundaryMaxLateral)}]</span>
+          <span>boundary local lateral: {formatSpeed(worldDebug.boundaryLocalLateral)}</span>
+          <span>blockedByBoundary: {worldDebug.blockedByBoundary ? 'true' : 'false'}</span>
           <span>currentHeading: {formatAngle(worldDebug.currentHeading ?? worldDebug.heading)}</span>
           <span>local forward/lateral: {formatDebugPoint(worldDebug.localForward, worldDebug.localLateral)}</span>
           <span>mapPlayerX: {formatSpeed(worldDebug.mapPlayerX)}</span>
