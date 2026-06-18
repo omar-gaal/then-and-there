@@ -2,6 +2,11 @@ import Webcam from 'react-webcam'
 import { StatusPill } from './StatusPill'
 
 const STARTING_LIVES = 3
+const TULIP_IMAGES = {
+  blue: '/amsterdam background/blue-tulip.png',
+  pink: '/amsterdam background/pink-tulip.png',
+  yellow: '/amsterdam background/yellow-tulip.png',
+}
 
 export function AmsterdamStage({
   activeHoverId,
@@ -39,13 +44,16 @@ export function AmsterdamStage({
     <div className="amsterdam-stage" data-round={game.status} ref={stageRef}>
       <div className="canal-sky"><span></span><span></span><span></span></div>
       <div className="canal-water"></div>
+      <div className="amsterdam-ground" aria-hidden="true"></div>
       <div className="tulip-track" aria-hidden="true">
         {game.obstacles.map((tulip) => (
           <div
             className={`tulip-obstacle is-${tulip.kind}`}
             key={tulip.id}
             style={{ '--scale': tulip.scale, '--x': `${tulip.x * 100}%` }}
-          ><i></i><i></i><i></i></div>
+          >
+            <img src={TULIP_IMAGES[tulip.kind]} alt="" draggable="false" />
+          </div>
         ))}
       </div>
       <div className="runner-shadow" style={{ '--shadow-scale': Math.max(0.35, 1 - game.avatarY * 0.7), '--shadow-opacity': Math.max(0.18, 0.52 - game.avatarY * 0.3) }}></div>
