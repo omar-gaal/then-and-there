@@ -138,32 +138,35 @@ export function ParisExperience({ onBackToMap }) {
         </div>
       </header>
       <section className="workspace workspace--stage-only" aria-label="Paris pastry catching game">
-        <TrackingStage
-          activeHoverId={activeHoverId}
-          canvasRef={canvasRef}
-          countdown={countdown}
-          fingerPos={hand.fingerPos}
-          game={game}
-          handCanvasRef={hand.canvasRef}
-          handIsReady={hand.isReady}
-          handWebcamRef={hand.webcamRef}
-          isLoading={isLoading}
-          isRunning={isRunning}
-          mapHoverRef={mapHoverRef}
-          onBackToMap={handleBackToMap}
-          onCameraError={handleCameraError}
-          onCameraReady={handleCameraReady}
-          onHandCameraReady={hand.handleCameraReady}
-          onPointerAim={handlePointerAim}
-          onStartCamera={startCamera}
-          onStartRound={startRound}
-          playAgainHoverRef={playAgainHoverRef}
-          puckRef={puckRef}
-          stageRef={stageRef}
-          startHoverRef={startHoverRef}
-          tracking={tracking}
-          webcamRef={webcamRef}
-        />
+        <div className="paris-stage-wrap">
+          <TrackingStage
+            activeHoverId={activeHoverId}
+            canvasRef={canvasRef}
+            countdown={countdown}
+            fingerPos={hand.fingerPos}
+            game={game}
+            handCanvasRef={hand.canvasRef}
+            handIsReady={hand.isReady}
+            handWebcamRef={hand.webcamRef}
+            isLoading={isLoading}
+            isRunning={isRunning}
+            mapHoverRef={mapHoverRef}
+            onBackToMap={handleBackToMap}
+            onCameraError={handleCameraError}
+            onCameraReady={handleCameraReady}
+            onHandCameraReady={hand.handleCameraReady}
+            onPointerAim={handlePointerAim}
+            onStartCamera={startCamera}
+            onStartRound={startRound}
+            playAgainHoverRef={playAgainHoverRef}
+            puckRef={puckRef}
+            stageRef={stageRef}
+            startHoverRef={startHoverRef}
+            tracking={tracking}
+            webcamRef={webcamRef}
+          />
+          <img src="/paris%20background/tower.png" className="paris-tower" aria-hidden="true" alt="" />
+        </div>
       </section>
     </>
   )

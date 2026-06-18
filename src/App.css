@@ -357,6 +357,43 @@ h1 {
   box-shadow: var(--shadow);
 }
 
+.city-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.paris-bg {
+  background-image: url('/paris background/bg-paris.png');
+}
+
+.amsterdam-bg {
+  background-image: url('/amsterdam background/amsterdam-downtown.png');
+}
+
+.paris-stage-wrap {
+  position: relative;
+}
+
+.paris-tower {
+  position: absolute;
+  right: -40%;
+  top: 30%;
+  bottom: 0;
+  height: 115%;
+  width: auto;
+  z-index: 10;
+  pointer-events: none;
+  transform: rotate(-5deg);
+}
+
 .webcam-feed,
 .landmark-layer {
   position: absolute;
@@ -1840,52 +1877,13 @@ h1 {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: linear-gradient(#8ed6e6 0 58%, #d8c89c 58% 72%, #5292a4 72%);
+  background: #ffffff url('/amsterdam background/back-houses.png') center 60% / cover no-repeat;
   box-shadow: var(--shadow);
 }
 
-.canal-sky {
-  position: absolute;
-  inset: 0 0 28%;
-  background: linear-gradient(180deg, #79c5df, #e7f1d4 75%);
-}
-
-.canal-sky span {
-  position: absolute;
-  bottom: 0;
-  width: 17%;
-  height: 50%;
-  background: #a64c3d;
-  border: 5px solid rgba(255, 255, 255, 0.3);
-  box-shadow: inset 0 -40px rgba(77, 51, 43, 0.25);
-}
-
-.canal-sky span:nth-child(1) {
-  left: 38%;
-  height: 57%;
-  background: #bd7553;
-}
-.canal-sky span:nth-child(2) {
-  left: 55%;
-  height: 45%;
-  background: #d19b54;
-}
-.canal-sky span:nth-child(3) {
-  left: 72%;
-  height: 62%;
-  background: #694d50;
-}
-
+.canal-sky,
 .canal-water {
-  position: absolute;
-  inset: 72% 0 0;
-  background:
-    repeating-linear-gradient(
-      175deg,
-      rgba(255, 255, 255, 0.22) 0 2px,
-      transparent 2px 15px
-    ),
-    #3e8196;
+  display: none;
 }
 
 .tulip-track {
