@@ -92,7 +92,7 @@ export function usePoseTracking() {
         setTracking((current) => ({
           ...current,
           confidence: 0,
-          label: "Step into view — full body visible",
+          label: "Step into view , full body visible",
           mode: "searching",
         }));
       }
@@ -170,7 +170,7 @@ export function usePoseTracking() {
       return;
     }
 
-    // Jump detection phase — thresholds adapt to how far user stands from camera
+    // Jump detection phase , thresholds adapt to how far user stands from camera
     const jumpThreshold = bodyScaleRef.current
       ? Math.max(10, bodyScaleRef.current * JUMP_RATIO)
       : FALLBACK_JUMP_PX;

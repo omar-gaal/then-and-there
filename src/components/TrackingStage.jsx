@@ -1,5 +1,6 @@
 import Webcam from "react-webcam";
 import { VIDEO_CONSTRAINTS } from "../handTracking";
+import { StatusPill } from "./StatusPill";
 
 export function TrackingStage({
   activeHoverId,
@@ -24,6 +25,7 @@ export function TrackingStage({
   puckRef,
   stageRef,
   startHoverRef,
+  tracking,
   webcamRef
 }) {
   function handlePointerMove(event) {
@@ -43,6 +45,7 @@ export function TrackingStage({
 
   const showHandTracking = !isRunning || game.status === 'finished'
   const showFingerCursor = showHandTracking && fingerPos
+  const isPlaying = isRunning && game.status === 'playing'
 
   return (
     <div
@@ -53,7 +56,7 @@ export function TrackingStage({
       onPointerDown={handlePointerMove}
       onPointerMove={handlePointerMove}
     >
-      {/* Hand hover webcam — always mounted to avoid camera re-init flash */}
+      {/* Hand hover webcam , always mounted to avoid camera re-init flash */}
       {handIsReady && (
         <Webcam
           ref={handWebcamRef}
@@ -66,7 +69,7 @@ export function TrackingStage({
         />
       )}
 
-      {/* Game webcam — visible only while playing */}
+      {/* Game webcam , visible only while playing */}
       {isRunning && (
         <Webcam
           ref={webcamRef}
@@ -114,24 +117,52 @@ export function TrackingStage({
 
       <div ref={puckRef} className="control-object" role="img" aria-label="Pastry basket">🧺</div>
 
-      {isRunning && (
-        <div className="stage-hud" aria-live="polite">
-          <span>{game.score}</span>
-          <span>{formatTime(game.timeLeft)}</span>
+      {/* HUD chips , top-left, visible while playing */}
+      {isPlaying && (
+        <div className="stage-chips" aria-live="polite">
+          <div className="stage-chip">
+            <span className="stage-chip-icon">⏱</span>
+            {formatChipTime(game.timeLeft)}
+          </div>
+          <div className="stage-chip">
+            <span className="stage-chip-icon">🎯</span>
+            {game.caught}
+          </div>
+          <div className="stage-chip" data-warning={game.missed >= game.maxMisses - 2 ? "true" : undefined}>
+            <span className="stage-chip-icon">💥</span>
+            {game.missed}/{game.maxMisses}
+          </div>
+        </div>
+      )}
+
+      {/* Status pill , top-right, visible while playing */}
+      {isPlaying && tracking && (
+        <div className="stage-status">
+          <StatusPill mode={tracking.mode} label={tracking.label} />
         </div>
       )}
 
       {/* Pre-game overlay */}
       {!isRunning && (
         <div className="round-overlay">
-          <p>Paris challenge</p>
+          <p className="round-overlay-eyebrow">Paris challenge</p>
           <strong>Catch the pastries</strong>
+          <div className="how-to-play-card">
+            <span className="how-to-play-label">How to play</span>
+            <ul className="how-to-play-steps">
+              <li>Move your hand to guide the 🧺 basket</li>
+              <li>Catch falling croissants, baguettes &amp; éclairs</li>
+              <li>Miss {game.maxMisses} and the round ends early</li>
+              <li>You have 20 seconds , catch as many as you can!</li>
+            </ul>
+          </div>
           <HoverZone
             countdown={activeHoverId === 'start' ? countdown : null}
             disabled={isLoading}
-            label={isLoading ? 'Loading…' : 'Start'}
+            label={isLoading ? 'Loading…' : 'Begin round'}
             onClick={onStartCamera}
             targetRef={startHoverRef}
+            variant="start"
           />
           <p className="hover-hint">
             {fingerPos ? 'Hold still…' : 'Point your finger at the button'}
@@ -142,11 +173,11 @@ export function TrackingStage({
       {/* Post-round overlay */}
       {isRunning && game.status === 'finished' && (
         <div className="round-overlay">
-          <p>Round complete</p>
+          <p className="round-overlay-eyebrow">Round complete</p>
           <strong>{game.score} pts</strong>
           {game.funFact && (
             <div className="fun-fact-card">
-              <span className="fun-fact-label">🥐 Paris fun fact</span>
+              <span className="fun-fact-label">Paris fun fact</span>
               <p className="fun-fact-text">{game.funFact}</p>
             </div>
           )}
@@ -160,7 +191,7 @@ export function TrackingStage({
             />
             <HoverZone
               countdown={activeHoverId === 'map' ? countdown : null}
-              label="Map"
+              label="Back to map"
               onClick={onBackToMap}
               targetRef={mapHoverRef}
               variant="map"
@@ -206,8 +237,11 @@ export function FingerCursor({ fingerPos, countdown }) {
   )
 }
 
-function formatTime(timeLeft) {
-  return `${Math.ceil(timeLeft)}s`;
+function formatChipTime(timeLeft) {
+  const s = Math.ceil(Math.max(0, timeLeft))
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return `${m}:${String(rem).padStart(2, '0')}`
 }
 
 function clamp(value, min, max) {

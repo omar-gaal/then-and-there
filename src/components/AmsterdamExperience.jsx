@@ -3,9 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTulipGame } from '../hooks/useTulipGame'
 import { usePoseTracking } from '../hooks/usePoseTracking'
 import { useHandHover } from '../hooks/useHandHover'
-import { AmsterdamPanel } from './AmsterdamPanel'
 import { AmsterdamStage } from './AmsterdamStage'
-import { StatusPill } from './StatusPill'
 
 const AUTO_START_SECONDS = 3
 
@@ -187,9 +185,8 @@ export function AmsterdamExperience({ onBackToMap }) {
     <>
       <header className="topbar">
         <div><p className="eyebrow">Amsterdam prototype</p><h1>Tulip Canal Run</h1></div>
-        <StatusPill mode={tracking.mode} label={tracking.label} />
       </header>
-      <section className="workspace" aria-label="Amsterdam tulip jumping game">
+      <section className="workspace workspace--stage-only" aria-label="Amsterdam tulip jumping game">
         <AmsterdamStage
           activeHoverId={activeHoverId}
           canvasRef={poseCanvasRef}
@@ -217,14 +214,6 @@ export function AmsterdamExperience({ onBackToMap }) {
           tracking={tracking}
           videoConstraints={videoConstraints}
           webcamRef={webcamRef}
-        />
-        <AmsterdamPanel
-          game={game}
-          isLoading={isLoading}
-          isRunning={isRunning}
-          onStartCamera={startCamera}
-          onStopCamera={handleStopCamera}
-          tracking={tracking}
         />
       </section>
     </>
