@@ -29,13 +29,3 @@ export const PICKUP_ANIMATION_DURATION = 1.2
 export const POSE_DEBUG_MODE = false
 export const SCREEN_LEFT_LOCAL_X = 0.24
 export const SCREEN_RIGHT_LOCAL_X = -0.24
-export const MAP_MAIN_STREET = {
-  centerX: 0.66,
-  halfWidth: 0.09,
-}
-export const MAP_LEFT_STREET = {
-  centerY: 0.48,
-  endX: 0.66,
-  halfWidth: 0.08,
-  startX: 0.25,
-}
