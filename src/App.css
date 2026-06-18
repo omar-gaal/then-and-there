@@ -1962,7 +1962,7 @@ h1 {
   position: absolute;
   left: var(--x);
   bottom: 22.5%;
-  width: 100px;
+  width: 130px;
   aspect-ratio: 1;
   transform: translateX(-50%) scale(var(--scale));
 }
