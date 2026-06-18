@@ -1941,6 +1941,16 @@ h1 {
   display: none;
 }
 
+/* .amsterdam-ground {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 2;
+  height: 38%;
+  background: url("/amsterdam background/ground-amsterdam.png") center bottom /
+    100% auto no-repeat;
+  pointer-events: none;
+} */
+
 .tulip-track {
   position: absolute;
   inset: 0;
@@ -1951,56 +1961,19 @@ h1 {
 .tulip-obstacle {
   position: absolute;
   left: var(--x);
-  bottom: 27%;
-  width: 62px;
-  height: 100px;
+  bottom: 22.5%;
+  width: 100px;
+  aspect-ratio: 1;
   transform: translateX(-50%) scale(var(--scale));
 }
 
-.tulip-obstacle i {
-  position: absolute;
-  bottom: 0;
-  width: 4px;
-  height: 68px;
-  border-radius: 99px;
-  background: #39703d;
-}
-
-.tulip-obstacle i::before {
-  content: "";
-  position: absolute;
-  top: -14px;
-  left: 50%;
-  width: 28px;
-  height: 30px;
-  border-radius: 55% 55% 45% 45%;
-  background: var(--flower, #dc4f55);
-  transform: translateX(-50%);
-  box-shadow: inset 8px 0 rgba(255, 255, 255, 0.18);
-}
-
-.tulip-obstacle i:nth-child(1) {
-  left: 8px;
-  height: 55px;
-}
-.tulip-obstacle i:nth-child(2) {
-  left: 29px;
-}
-.tulip-obstacle i:nth-child(3) {
-  left: 51px;
-  height: 48px;
-}
-.tulip-obstacle.is-red {
-  --flower: #dc4f55;
-}
-.tulip-obstacle.is-yellow {
-  --flower: #f1c941;
-}
-.tulip-obstacle.is-pink {
-  --flower: #ec78a2;
-}
-.tulip-obstacle.is-purple {
-  --flower: #8565b5;
+.tulip-obstacle img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
 }
 
 .runner {
@@ -2387,7 +2360,8 @@ h1 {
     width: 112px;
   }
   .tulip-obstacle {
-    bottom: 25%;
+    bottom: 22%;
+    width: 74px;
   }
   .runner {
     bottom: 26%;
