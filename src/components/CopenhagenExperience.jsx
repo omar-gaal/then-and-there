@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Webcam from "react-webcam";
 import completedBicycleIllustration from "../assets/copenhagen-bicycle-postcard.svg";
+import { BIKE_PARTS } from "../game/bikeParts";
 import { VIDEO_CONSTRAINTS } from "../handTracking";
-import { getPartMapPosition } from "../game/mapMarkers";
+import { partToMapMarker } from "../game/mapMarkers";
 import { useCopenhagenTracking } from "../hooks/useCopenhagenTracking";
 import { useMapGestureToggle } from "../hooks/useMapGestureToggle";
 import { CollectionPanel } from "./CollectionPanel";
 import { DebugPanel } from "./DebugPanel";
 import { ThreeStreetScene } from "./ThreeStreetScene";
 import { TownMap } from "./TownMap";
+import { LEFT_STREET_ENTRANCE_Z } from "../scene/constants";
 
 const FALLBACK_PARTS = [
   { id: "frontWheel", label: "front wheel", collected: false },
@@ -22,55 +24,35 @@ const DEFAULT_MAP_DATA = {
   areaId: "mainStreet",
   player: {
     progress: 0,
+    playerArrowRotation: 0,
     side: "center",
     sidePosition: 0.5,
+    x: 0.64,
+    y: 0.88,
   },
-  parts: FALLBACK_PARTS.map((part) => ({
+  parts: BIKE_PARTS.map((part) => ({
     ...part,
-    ...getPartMapPosition(part.id),
+    collected: false,
+    ...partToMapMarker(part),
   })),
   transitionLabel: "",
   turnHint: "",
 };
 
 const DEBUG_OPEN_STORAGE_KEY = "copenhagenBikeGame.debugOpen";
+const FINAL_PICKUP_DELAY_MS = 1200;
+const CELEBRATION_DURATION_MS = 2100;
 
-const TUTORIAL_STEPS = [
-  {
-    body: "Move your body gently left or right.",
-    title: "Side movement",
-  },
-  {
-    body: "Swing your arms and lift your knees to walk.",
-    title: "Walking",
-  },
-  {
-    body: "Stop moving and lower your hands to stop.",
-    title: "Stopping",
-  },
-  {
-    body: "Raise both hands to open the map.",
-    mapOpenBody: "Great! Raise both hands again to close it.",
-    title: "Map gesture",
-  },
-  {
-    body: "Wave your hand left to turn left.",
-    rightBody: "Wave your hand right to turn right.",
-    title: "Turning",
-  },
-  {
-    body: "Cross your arms to turn around. Keyboard: R",
-    title: "Turn around",
-  },
-  {
-    body: "Bend down to pick up the wheel.",
-    title: "Pickup",
-  },
-];
-
-const TUTORIAL_CAMERA_TITLE = "Welcome to Bike Hunt Copenhagen!";
-const TUTORIAL_CAMERA_BODY = "Start the camera, then copy the guide's body movements to learn how to play.";
-const TUTORIAL_DONE_MESSAGE = "Now find the rest of the bike parts!";
+const GUIDE_STEPS = {
+  HIDDEN: "hidden",
+  LEFT: "left",
+  MAP: "map",
+  PICKUP: "pickup",
+  RIGHT: "right",
+  TURN: "turn",
+  WALK: "walk",
+};
+const INTERSECTION_GUIDE_RANGE = 16;
 const COMPLETION_FACTS = [
   "More than half of Copenhagen residents use bicycles every day.",
   "Copenhagen has hundreds of kilometers of bicycle infrastructure.",
@@ -87,11 +69,23 @@ const DEFAULT_WORLD_DEBUG = {
   armTurnTriggerAttempted: false,
   armTurnTriggered: "",
   armsCrossed: false,
+  armsCrossedDisabled: true,
+  gestureTriggerAccepted: false,
+  gestureTriggerAttempted: false,
   avatarBaseYaw: Math.PI,
+  avatarWorldX: 0,
+  avatarWorldZ: 0,
   currentAreaId: "mainStreet",
+  currentHeading: 0,
+  distancePlayerToNearbyPartOnMap: null,
+  distanceToNearestPart: null,
   effectiveAvatarYaw: Math.PI,
   facingAngle: Math.PI,
+  finalLateralMovement: 0,
   heading: 0,
+  headingAfter: 0,
+  headingBefore: 0,
+  idleDetected: false,
   keyboardActive: false,
   keyboardForward: 0,
   keyboardMovementValue: 0,
@@ -99,16 +93,32 @@ const DEFAULT_WORLD_DEBUG = {
   keyboardSpeedMultiplier: 1.5,
   keyboardSmoothing: 0.5,
   lastTurnAroundTrigger: "none",
+  lastTurnGesture: "none",
   lateralOffset: 0,
   localForward: 0,
   localLateral: 0,
+  leftArmDetected: false,
+  leftArmDistance: 0,
   leftArmOut: false,
+  leftArmExtended: false,
+  leftArmExtendedRaw: false,
+  leftHoldMs: 0,
+  leftShoulderX: 0.5,
+  leftWristMinusShoulder: 0,
   leftWristDeltaX: 0,
   leftWristAvatarX: 0,
+  armTurnDistanceThreshold: 0.12,
+  armTurnTestThreshold: 0.12,
   rawLeftWristX: 0.5,
   movementSmoothing: 0.08,
   mapPlayerX: 0.66,
   mapPlayerY: 0.88,
+  mapParts: [],
+  nearbyPartMapX: null,
+  nearbyPartMapY: null,
+  nearbyPartWorldX: null,
+  nearbyPartWorldZ: null,
+  nearestPartId: "none",
   occlusionCameraInsideBuilding: false,
   occlusionFadedCount: 0,
   occlusionFadedIds: [],
@@ -137,7 +147,14 @@ const DEFAULT_WORLD_DEBUG = {
     visibleObjects: 0,
   },
   rightWristAvatarX: 0,
+  rightArmDetected: false,
+  rightArmDistance: 0,
   rightArmOut: false,
+  rightArmExtended: false,
+  rightArmExtendedRaw: false,
+  rightHoldMs: 0,
+  rightShoulderX: 0.5,
+  rightWristMinusShoulder: 0,
   rightWristDeltaX: 0,
   rawRightWristX: 0.5,
   screenLeftKneeSource: "none",
@@ -148,22 +165,38 @@ const DEFAULT_WORLD_DEBUG = {
   smoothedSpeed: 0,
   swipeLeftDetected: false,
   swipeRightDetected: false,
+  trackingStable: false,
   turnAroundCooldownMs: 0,
+  turnGestureCooldownMs: 0,
+  turnGestureActive: false,
+  turnSource: "none",
+  triggerBlockedReason: "ready",
   playerWorldX: 0,
   playerWorldZ: 0,
+  playerMapX: 0.66,
+  playerMapY: 0.88,
+  playerArrowRotation: 0,
+  playerPickupWorldX: 0,
+  playerPickupWorldZ: 0,
   worldZ: 0,
   yawInfluence: 0.04,
 };
 
 export function CopenhagenExperience({ onBackToCities }) {
   const completionTriggeredRef = useRef(false);
+  const finalPickupTimerRef = useRef(0);
+  const postcardTimerRef = useRef(0);
+  const turnGuideStartHeadingRef = useRef(null);
+  const walkingDetectedAtRef = useRef(0);
+  const walkStartWorldZRef = useRef(null);
   const [isMapOpen, setIsMapOpen] = useState(false);
-  const [tutorialActive, setTutorialActive] = useState(true);
-  const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
-  const [completedTutorialSteps, setCompletedTutorialSteps] = useState([]);
-  const [tutorialMapOpened, setTutorialMapOpened] = useState(false);
-  const [tutorialTurnLeftDone, setTutorialTurnLeftDone] = useState(false);
-  const [tutorialDoneMessageVisible, setTutorialDoneMessageVisible] = useState(false);
+  const [guideStep, setGuideStep] = useState(GUIDE_STEPS.WALK);
+  const [guideCompletedWalk, setGuideCompletedWalk] = useState(false);
+  const [guideCompletedLeft, setGuideCompletedLeft] = useState(false);
+  const [guideCompletedRight, setGuideCompletedRight] = useState(false);
+  const [mapGuideCompleted, setMapGuideCompleted] = useState(false);
+  const [pickupGuideCompleted, setPickupGuideCompleted] = useState(false);
+  const [turnGuideCompleted, setTurnGuideCompleted] = useState(false);
   const [isKeyboardHelpOpen, setIsKeyboardHelpOpen] = useState(false);
   const [completionPhase, setCompletionPhase] = useState("idle");
   const [completionFact, setCompletionFact] = useState("");
@@ -197,6 +230,7 @@ export function CopenhagenExperience({ onBackToCities }) {
     isLoading,
     isRunning,
     puckRef,
+    resetBodyLeanCenter,
     startCamera,
     tracking,
     webcamRef,
@@ -209,76 +243,21 @@ export function CopenhagenExperience({ onBackToCities }) {
     pose: tracking.pose,
   });
   const completionActive = completionPhase !== "idle" && completionPhase !== "dismissed";
-  const shouldShowCameraIntro = tutorialActive && !isRunning && !completionActive;
-  const shouldRunTutorial = tutorialActive && isRunning && !completionActive;
-  const tutorialStep = TUTORIAL_STEPS[currentTutorialStep];
-  const tutorialMessage = useMemo(() => {
-    if (shouldShowCameraIntro) {
-      return TUTORIAL_CAMERA_BODY;
-    }
-
-    if (!shouldRunTutorial) {
-      return tutorialDoneMessageVisible ? TUTORIAL_DONE_MESSAGE : "";
-    }
-
-    if (!tutorialStep) {
-      return "";
-    }
-
-    if (currentTutorialStep === 3 && tutorialMapOpened && isMapOpen) {
-      return tutorialStep.mapOpenBody;
-    }
-
-    if (currentTutorialStep === 4 && tutorialTurnLeftDone) {
-      return tutorialStep.rightBody;
-    }
-
-    return tutorialStep.body;
-  }, [
-    currentTutorialStep,
-    isMapOpen,
-    shouldRunTutorial,
-    shouldShowCameraIntro,
-    tutorialDoneMessageVisible,
-    tutorialMapOpened,
-    tutorialStep,
-    tutorialTurnLeftDone,
-  ]);
-
-  const completeTutorialStep = useCallback((stepIndex) => {
-    setCompletedTutorialSteps((steps) => (
-      steps.includes(stepIndex) ? steps : [...steps, stepIndex]
-    ));
-    setCurrentTutorialStep((current) => Math.max(current, stepIndex + 1));
-  }, []);
-
-  const finishTutorial = useCallback(() => {
-    setTutorialActive(false);
-    setTutorialDoneMessageVisible(true);
-    window.setTimeout(() => {
-      setTutorialDoneMessageVisible(false);
-    }, 3200);
-  }, []);
-
-  const skipTutorial = useCallback(() => {
-    setTutorialActive(false);
-    setTutorialDoneMessageVisible(false);
-  }, []);
-
-  const resetTutorial = useCallback(() => {
-    setTutorialActive(true);
-    setCurrentTutorialStep(0);
-    setCompletedTutorialSteps([]);
-    setTutorialMapOpened(false);
-    setTutorialTurnLeftDone(false);
-    setTutorialDoneMessageVisible(false);
-  }, []);
+  const activeGuideStep = isRunning && !completionActive ? guideStep : GUIDE_STEPS.HIDDEN;
 
   const handleBackToCities = useCallback(() => {
     onBackToCities?.();
   }, [onBackToCities]);
 
+  const clearCompletionTimers = useCallback(() => {
+    window.clearTimeout(finalPickupTimerRef.current);
+    window.clearTimeout(postcardTimerRef.current);
+    finalPickupTimerRef.current = 0;
+    postcardTimerRef.current = 0;
+  }, []);
+
   const handlePlayAgain = useCallback(() => {
+    clearCompletionTimers();
     completionTriggeredRef.current = false;
     setCompletionPhase("idle");
     setCompletionTriggered(false);
@@ -286,6 +265,9 @@ export function CopenhagenExperience({ onBackToCities }) {
     setCompletionFact("");
     setIsMapOpen(false);
     setMapData(DEFAULT_MAP_DATA);
+    turnGuideStartHeadingRef.current = null;
+    walkingDetectedAtRef.current = 0;
+    walkStartWorldZRef.current = null;
     setPickupDebug({
       collectedCount: 0,
       debug: null,
@@ -297,9 +279,15 @@ export function CopenhagenExperience({ onBackToCities }) {
       parts: FALLBACK_PARTS,
       totalParts: FALLBACK_PARTS.length,
     });
-    resetTutorial();
+    setGuideStep(GUIDE_STEPS.WALK);
+    setGuideCompletedWalk(false);
+    setGuideCompletedLeft(false);
+    setGuideCompletedRight(false);
+    setMapGuideCompleted(false);
+    setPickupGuideCompleted(false);
+    setTurnGuideCompleted(false);
     setRunResetKey((key) => key + 1);
-  }, [resetTutorial]);
+  }, [clearCompletionTimers]);
 
   const handlePickupDebug = useCallback((nextPickupDebug) => {
     setPickupDebug(nextPickupDebug);
@@ -315,12 +303,21 @@ export function CopenhagenExperience({ onBackToCities }) {
 
     completionTriggeredRef.current = true;
     setCompletionTriggered(true);
-    setPostcardVisible(true);
-    setCompletionPhase("postcard");
-    setTutorialActive(false);
-    setTutorialDoneMessageVisible(false);
+    setCompletionPhase("finalPickup");
+    setGuideStep(GUIDE_STEPS.HIDDEN);
     setCompletionFact(COMPLETION_FACTS[Math.floor(Math.random() * COMPLETION_FACTS.length)]);
+
+    finalPickupTimerRef.current = window.setTimeout(() => {
+      setCompletionPhase("celebrating");
+
+      postcardTimerRef.current = window.setTimeout(() => {
+        setCompletionPhase("postcard");
+        setPostcardVisible(true);
+      }, CELEBRATION_DURATION_MS);
+    }, FINAL_PICKUP_DELAY_MS);
   }, []);
+
+  useEffect(() => () => clearCompletionTimers(), [clearCompletionTimers]);
 
   useEffect(() => {
     try {
@@ -335,21 +332,6 @@ export function CopenhagenExperience({ onBackToCities }) {
       if (event.code === "KeyM" && !event.repeat) {
         toggleMap();
       }
-
-      if (!shouldRunTutorial || event.repeat || currentTutorialStep !== 4) {
-        return;
-      }
-
-      if (event.code === "KeyQ" || event.code === "ArrowLeft" || event.code === "KeyA") {
-        setTutorialTurnLeftDone(true);
-      }
-
-      if (
-        tutorialTurnLeftDone &&
-        (event.code === "KeyE" || event.code === "ArrowRight" || event.code === "KeyD")
-      ) {
-        completeTutorialStep(4);
-      }
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -357,212 +339,213 @@ export function CopenhagenExperience({ onBackToCities }) {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [
-    completeTutorialStep,
-    currentTutorialStep,
-    shouldRunTutorial,
-    toggleMap,
-    tutorialTurnLeftDone,
-  ]);
+  }, [toggleMap]);
 
   useEffect(() => {
-    if (!shouldRunTutorial || currentTutorialStep !== 0) {
+    if (!isRunning || completionActive) {
       return undefined;
     }
 
-    if (Math.abs(worldDebug.lateralOffset) > 0.22 || Math.abs(worldDebug.keyboardSide) > 0) {
-      const timeoutId = window.setTimeout(() => {
-        completeTutorialStep(0);
-      }, 0);
+    let nextGuideStep = "";
+    let completeCurrentStep = null;
+    const now = performance.now();
 
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
+    if (guideStep === GUIDE_STEPS.WALK && walkStartWorldZRef.current === null) {
+      walkStartWorldZRef.current = worldDebug.playerWorldZ ?? 0;
     }
 
-    return undefined;
+    if (tracking.motion?.walking) {
+      walkingDetectedAtRef.current ||= now;
+    } else {
+      walkingDetectedAtRef.current = 0;
+    }
+
+    const walkedForwardEnough =
+      Math.abs((worldDebug.playerWorldZ ?? 0) - (walkStartWorldZRef.current ?? worldDebug.playerWorldZ ?? 0)) > 0.55 ||
+      worldDebug.smoothedSpeed > 0.008;
+    const walkingDetectedLongEnough = walkingDetectedAtRef.current > 0 && now - walkingDetectedAtRef.current >= 1000;
+
+    if (guideStep === GUIDE_STEPS.WALK && (walkedForwardEnough || walkingDetectedLongEnough || worldDebug.keyboardForward > 0)) {
+      nextGuideStep = GUIDE_STEPS.LEFT;
+      completeCurrentStep = () => setGuideCompletedWalk(true);
+    } else if (guideStep === GUIDE_STEPS.LEFT && (tracking.motion?.leanLeft || worldDebug.finalLateralMovement < -0.01 || worldDebug.keyboardSide < 0)) {
+      nextGuideStep = GUIDE_STEPS.RIGHT;
+      completeCurrentStep = () => setGuideCompletedLeft(true);
+    } else if (guideStep === GUIDE_STEPS.RIGHT && (tracking.motion?.leanRight || worldDebug.finalLateralMovement > 0.01 || worldDebug.keyboardSide > 0)) {
+      nextGuideStep = GUIDE_STEPS.MAP;
+      completeCurrentStep = () => setGuideCompletedRight(true);
+    }
+
+    if (!nextGuideStep) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      completeCurrentStep?.();
+      setGuideStep(nextGuideStep);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [
-    completeTutorialStep,
-    currentTutorialStep,
-    shouldRunTutorial,
+    completionActive,
+    guideStep,
+    isRunning,
+    tracking.motion?.leanLeft,
+    tracking.motion?.leanRight,
+    tracking.motion?.walking,
+    worldDebug.finalLateralMovement,
+    worldDebug.keyboardForward,
     worldDebug.keyboardSide,
-    worldDebug.lateralOffset,
-  ]);
-
-  useEffect(() => {
-    if (!shouldRunTutorial || currentTutorialStep !== 1) {
-      return undefined;
-    }
-
-    if (worldDebug.smoothedSpeed > 0.008 || worldDebug.keyboardForward > 0) {
-      const timeoutId = window.setTimeout(() => {
-        completeTutorialStep(1);
-      }, 0);
-
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
-    }
-
-    return undefined;
-  }, [
-    completeTutorialStep,
-    currentTutorialStep,
-    shouldRunTutorial,
-    worldDebug.keyboardForward,
+    worldDebug.playerWorldZ,
     worldDebug.smoothedSpeed,
   ]);
 
   useEffect(() => {
-    if (!shouldRunTutorial || currentTutorialStep !== 2) {
+    if (guideStep !== GUIDE_STEPS.MAP) {
       return undefined;
     }
-
-    if (worldDebug.smoothedSpeed < 0.004 && worldDebug.keyboardForward === 0) {
-      const timeoutId = window.setTimeout(() => {
-        completeTutorialStep(2);
-      }, 700);
-
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
-    }
-
-    return undefined;
-  }, [
-    completeTutorialStep,
-    currentTutorialStep,
-    shouldRunTutorial,
-    worldDebug.keyboardForward,
-    worldDebug.smoothedSpeed,
-  ]);
-
-  useEffect(() => {
-    if (!shouldRunTutorial || currentTutorialStep !== 3) {
-      return undefined;
-    }
-
-    let timeoutId = 0;
 
     if (isMapOpen) {
-      timeoutId = window.setTimeout(() => {
-        setTutorialMapOpened(true);
+      const timeoutId = window.setTimeout(() => {
+        setMapGuideCompleted(true);
+        setGuideStep(GUIDE_STEPS.HIDDEN);
       }, 0);
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
+
+      return () => window.clearTimeout(timeoutId);
     }
 
-    if (tutorialMapOpened) {
-      timeoutId = window.setTimeout(() => {
-        completeTutorialStep(3);
-      }, 0);
-    }
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [
-    completeTutorialStep,
-    currentTutorialStep,
-    isMapOpen,
-    shouldRunTutorial,
-    tutorialMapOpened,
-  ]);
+    return undefined;
+  }, [guideStep, isMapOpen]);
 
   useEffect(() => {
-    if (!shouldRunTutorial || currentTutorialStep !== 4) {
+    if (!isRunning || completionActive || pickupGuideCompleted || guideStep !== GUIDE_STEPS.HIDDEN) {
       return undefined;
     }
 
-    let timeoutId = 0;
+    if (pickupDebug.nearbyPart !== "none" && pickupDebug.gestureState !== "collected") {
+      const timeoutId = window.setTimeout(() => setGuideStep(GUIDE_STEPS.PICKUP), 0);
 
-    if (worldDebug.swipeLeftDetected || worldDebug.armTurnTriggered === "Q") {
-      timeoutId = window.setTimeout(() => {
-        setTutorialTurnLeftDone(true);
-      }, 0);
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
+      return () => window.clearTimeout(timeoutId);
     }
+
+    return undefined;
+  }, [
+    completionActive,
+    guideStep,
+    isRunning,
+    pickupDebug.gestureState,
+    pickupDebug.nearbyPart,
+    pickupGuideCompleted,
+  ]);
+
+  useEffect(() => {
+    if (guideStep !== GUIDE_STEPS.PICKUP) {
+      return undefined;
+    }
+
+    if ((pickupDebug.parts ?? FALLBACK_PARTS).some((part) => part.collected)) {
+      const timeoutId = window.setTimeout(() => {
+        setPickupGuideCompleted(true);
+        setGuideStep(GUIDE_STEPS.HIDDEN);
+      }, 0);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    return undefined;
+  }, [guideStep, pickupDebug.parts]);
+
+  useEffect(() => {
+    if (!pickupGuideCompleted && (pickupDebug.parts ?? FALLBACK_PARTS).some((part) => part.collected)) {
+      const timeoutId = window.setTimeout(() => setPickupGuideCompleted(true), 0);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    return undefined;
+  }, [pickupDebug.parts, pickupGuideCompleted]);
+
+  useEffect(() => {
+    if (!isRunning || completionActive || turnGuideCompleted || guideStep !== GUIDE_STEPS.HIDDEN) {
+      return undefined;
+    }
+
+    const nearIntersectionGuideZone =
+      Math.abs((worldDebug.playerWorldZ ?? 0) - LEFT_STREET_ENTRANCE_Z) < INTERSECTION_GUIDE_RANGE;
+
+    if (nearIntersectionGuideZone && worldDebug.currentAreaId === "mainStreet") {
+      const timeoutId = window.setTimeout(() => setGuideStep(GUIDE_STEPS.TURN), 0);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    return undefined;
+  }, [
+    completionActive,
+    guideStep,
+    isRunning,
+    turnGuideCompleted,
+    worldDebug.currentAreaId,
+    worldDebug.playerWorldZ,
+  ]);
+
+  useEffect(() => {
+    if (guideStep !== GUIDE_STEPS.TURN) {
+      turnGuideStartHeadingRef.current = null;
+      return undefined;
+    }
+
+    if (turnGuideStartHeadingRef.current === null) {
+      turnGuideStartHeadingRef.current = worldDebug.heading ?? 0;
+    }
+
+    const headingChanged =
+      Math.abs(getAngleDelta(worldDebug.heading ?? 0, turnGuideStartHeadingRef.current)) > 0.18;
 
     if (
-      tutorialTurnLeftDone &&
-      (worldDebug.swipeRightDetected || worldDebug.armTurnTriggered === "E")
+      worldDebug.turnSource === "webcam" ||
+      worldDebug.turnSource === "keyboard" ||
+      worldDebug.gestureTriggerAccepted ||
+      headingChanged
     ) {
-      timeoutId = window.setTimeout(() => {
-        completeTutorialStep(4);
-      }, 0);
-    }
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [
-    completeTutorialStep,
-    currentTutorialStep,
-    shouldRunTutorial,
-    tutorialTurnLeftDone,
-    worldDebug.armTurnTriggered,
-    worldDebug.swipeLeftDetected,
-    worldDebug.swipeRightDetected,
-  ]);
-
-  useEffect(() => {
-    if (!shouldRunTutorial || currentTutorialStep !== 5) {
-      return undefined;
-    }
-
-    if (worldDebug.lastTurnAroundTrigger !== "none") {
       const timeoutId = window.setTimeout(() => {
-        completeTutorialStep(5);
+        setTurnGuideCompleted(true);
+        setGuideStep(GUIDE_STEPS.HIDDEN);
       }, 0);
 
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
+      return () => window.clearTimeout(timeoutId);
     }
 
     return undefined;
-  }, [
-    completeTutorialStep,
-    currentTutorialStep,
-    shouldRunTutorial,
-    worldDebug.lastTurnAroundTrigger,
-  ]);
+  }, [guideStep, worldDebug.gestureTriggerAccepted, worldDebug.heading, worldDebug.turnSource]);
 
   useEffect(() => {
-    if (!shouldRunTutorial || currentTutorialStep !== 6) {
-      return undefined;
-    }
+    if (!turnGuideCompleted && (worldDebug.turnSource === "webcam" || worldDebug.turnSource === "keyboard")) {
+      const timeoutId = window.setTimeout(() => setTurnGuideCompleted(true), 0);
 
-    const firstPartCollected = pickupDebug.parts?.some(
-      (part) => part.id === "frontWheel" && part.collected,
-    );
-
-    if (firstPartCollected) {
-      const timeoutId = window.setTimeout(() => {
-        completeTutorialStep(6);
-        finishTutorial();
-      }, 0);
-
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
+      return () => window.clearTimeout(timeoutId);
     }
 
     return undefined;
-  }, [
-    completeTutorialStep,
-    currentTutorialStep,
-    finishTutorial,
-    pickupDebug.parts,
-    shouldRunTutorial,
-  ]);
+  }, [turnGuideCompleted, worldDebug.turnSource]);
 
   const progressParts = pickupDebug.parts ?? FALLBACK_PARTS;
   const collectedCount = progressParts.filter((part) => part.collected).length;
   const totalParts = progressParts.length;
+  const nearIntersectionGuideZone =
+    Math.abs((worldDebug.playerWorldZ ?? 0) - LEFT_STREET_ENTRANCE_Z) < INTERSECTION_GUIDE_RANGE &&
+    worldDebug.currentAreaId === "mainStreet";
+  const guideDebug = {
+    activeGuideStep,
+    guideVisible: activeGuideStep !== GUIDE_STEPS.HIDDEN,
+    guideCompletedWalk,
+    guideCompletedLeft,
+    guideCompletedRight,
+    mapGuideCompleted,
+    nearIntersectionGuideZone,
+    pickupGuideCompleted,
+    turnGuideCompleted,
+  };
 
   return (
     <>
@@ -577,13 +560,14 @@ export function CopenhagenExperience({ onBackToCities }) {
         <div className="street-frame">
           <ThreeStreetScene
             completionPhase={completionPhase}
+            guideStep={activeGuideStep}
             onMapData={setMapData}
             onPickupDebug={handlePickupDebug}
+            onRecalibrateBodyLean={resetBodyLeanCenter}
             onWorldDebug={setWorldDebug}
-            currentTutorialStep={currentTutorialStep}
+            isMapOpen={isMapOpen}
             resetRunKey={runResetKey}
             tracking={tracking}
-            tutorialActive={shouldRunTutorial}
           />
 
           {isRunning && (
@@ -608,6 +592,7 @@ export function CopenhagenExperience({ onBackToCities }) {
             isOpen={isDebugOpen}
             isMapOpen={isMapOpen}
             mapGestureDebug={mapGestureDebug}
+            guideDebug={guideDebug}
             onToggle={() => setIsDebugOpen((current) => !current)}
             postcardVisible={postcardVisible}
             pickupDebug={pickupDebug}
@@ -630,51 +615,19 @@ export function CopenhagenExperience({ onBackToCities }) {
             </div>
           )}
 
-          {completionPhase === "found" && (
-            <div className="completion-toast" aria-live="polite">
-              You found all bike parts!
-            </div>
-          )}
-
-          {(tutorialActive || tutorialDoneMessageVisible) && (
-            <aside
-              className={`tutorial-panel${shouldShowCameraIntro ? " is-camera-intro" : ""}`}
-              aria-live="polite"
-              data-completed-steps={completedTutorialSteps.length}
-            >
-              <div>
-                <span>
-                  {shouldShowCameraIntro
-                    ? "Camera setup"
-                    : shouldRunTutorial
-                    ? `Step ${Math.min(currentTutorialStep + 1, TUTORIAL_STEPS.length)} / ${TUTORIAL_STEPS.length}`
-                    : "Ready"}
-                </span>
-                <strong>
-                  {shouldShowCameraIntro
-                    ? TUTORIAL_CAMERA_TITLE
-                    : shouldRunTutorial
-                      ? tutorialStep?.title
-                      : TUTORIAL_DONE_MESSAGE}
-                </strong>
+          {completionPhase === "celebrating" && (
+            <>
+              <div className="completion-toast" aria-live="polite">
+                You found all bike parts!
               </div>
-              {tutorialMessage && <p>{tutorialMessage}</p>}
-              {shouldShowCameraIntro && (
-                <>
-                  <button type="button" onClick={startCamera} disabled={isLoading}>
-                    {isLoading ? "Loading..." : "Start camera"}
-                  </button>
-                  <button type="button" onClick={skipTutorial}>
-                    Skip tutorial
-                  </button>
-                </>
-              )}
-              {shouldRunTutorial && (
-                <button type="button" onClick={skipTutorial}>
-                  Skip tutorial
-                </button>
-              )}
-            </aside>
+              <div className="completion-sparkles" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </>
           )}
 
           <details
@@ -712,7 +665,8 @@ export function CopenhagenExperience({ onBackToCities }) {
 
               <section>
                 <h2>Gestures</h2>
-                <p>Cross arms = Turn around</p>
+                <p>Left arm out = Turn left</p>
+                <p>Right arm out = Turn right</p>
               </section>
 
               <p className="keyboard-help-note">
@@ -768,14 +722,14 @@ export function CopenhagenExperience({ onBackToCities }) {
 
           <CollectionPanel parts={progressParts} />
 
-          {!isRunning && !tutorialActive && (
+          {!isRunning && (
             <button
               type="button"
               className="camera-start action-btn btn-dark"
               onClick={startCamera}
               disabled={isLoading}
             >
-              {isLoading ? "Loading MediaPipe..." : "Start webcam"}
+              {isLoading ? "Loading MediaPipe..." : "Start camera"}
             </button>
           )}
 
@@ -784,4 +738,8 @@ export function CopenhagenExperience({ onBackToCities }) {
       </section>
     </>
   );
+}
+
+function getAngleDelta(a, b) {
+  return Math.atan2(Math.sin(a - b), Math.cos(a - b));
 }
