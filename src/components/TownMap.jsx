@@ -19,6 +19,13 @@ export function TownMap({ mapData, onClose }) {
       </div>
 
       <div className="town-map-diagram" aria-hidden="true">
+        <div className="town-map-decor town-map-house town-map-house-a"><span></span><i></i></div>
+        <div className="town-map-decor town-map-house town-map-house-b"><span></span><i></i></div>
+        <div className="town-map-decor town-map-house town-map-house-c"><span></span><i></i></div>
+        <div className="town-map-decor town-map-tree town-map-tree-a"></div>
+        <div className="town-map-decor town-map-tree town-map-tree-b"></div>
+        <div className="town-map-decor town-map-bike">⌁</div>
+        <div className="town-map-decor town-map-canal"></div>
         <svg className="town-map-routes" viewBox="0 0 100 100" focusable="false">
           <path className="town-map-sidewalk" d="M64 8 L64 92" />
           <path className="town-map-sidewalk" d="M16 72 L64 72" />

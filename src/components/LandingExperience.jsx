@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Webcam from "react-webcam";
 import { useHandHover } from "../hooks/useHandHover";
 import { VIDEO_CONSTRAINTS } from "../handTracking";
+import { FingerCursor, HoverChoiceButton } from "./FingerHoldButton";
 import { StatusPill } from "./StatusPill";
-import { FingerCursor } from "./TrackingStage";
 
 const GESTURE_TIMEOUT_MS = 10_000;
-const HOLD_TO_SELECT_SECONDS = 3;
 
 export function LandingExperience({
   onChooseAmsterdam,
@@ -67,6 +66,7 @@ export function LandingExperience({
 
       <div className="landing-actions" aria-label="Choose a city">
         <HoverChoiceButton
+          ariaLabel="Choose Paris"
           className="is-paris"
           fingerPos={fingerPos}
           label="Paris"
@@ -75,6 +75,7 @@ export function LandingExperience({
           position={{ x: 0.28, y: 0.84 }}
         />
         <HoverChoiceButton
+          ariaLabel="Choose Copenhagen"
           className="is-copenhagen"
           fingerPos={fingerPos}
           label="Copenhagen"
@@ -83,6 +84,7 @@ export function LandingExperience({
           position={{ x: 0.5, y: 0.84 }}
         />
         <HoverChoiceButton
+          ariaLabel="Choose Amsterdam"
           className="is-amsterdam"
           fingerPos={fingerPos}
           label="Amsterdam"
@@ -112,77 +114,5 @@ export function LandingExperience({
         </div>
       )}
     </section>
-  );
-}
-
-function HoverChoiceButton({
-  className,
-  fingerPos,
-  label,
-  onChoose,
-  onCountdownChange,
-  position,
-}) {
-  const [countdown, setCountdown] = useState(null);
-  const hoverStartRef = useRef(null);
-  const firedRef = useRef(false);
-  const isHovered =
-    Boolean(fingerPos) &&
-    Math.hypot(fingerPos.x - position.x, fingerPos.y - position.y) <= 0.13;
-
-  useEffect(() => {
-    if (!isHovered) {
-      hoverStartRef.current = null;
-      firedRef.current = false;
-      const timeoutId = window.setTimeout(() => {
-        setCountdown(null);
-        onCountdownChange?.(null);
-      }, 0);
-
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
-    }
-
-    if (hoverStartRef.current === null) {
-      hoverStartRef.current = Date.now();
-    }
-
-    function updateCountdown() {
-      const elapsed = (Date.now() - hoverStartRef.current) / 1000;
-      const remaining = Math.ceil(
-        Math.max(0, HOLD_TO_SELECT_SECONDS - elapsed),
-      );
-
-      setCountdown(remaining);
-      onCountdownChange?.(remaining);
-
-      if (remaining === 0 && !firedRef.current) {
-        firedRef.current = true;
-        onChoose();
-      }
-    }
-
-    updateCountdown();
-    const interval = window.setInterval(updateCountdown, 100);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [isHovered, onChoose, onCountdownChange]);
-
-  return (
-    <button
-      type="button"
-      className={`landing-button ${className}`}
-      onClick={onChoose}
-      data-countdown={countdown !== null ? countdown : undefined}
-      aria-label={`Choose ${label}`}
-    >
-      <span className="landing-button-label">{label}</span>
-      <span className="landing-button-hint">
-        {isHovered && countdown !== null ? countdown || "✓" : `Hold 3s`}
-      </span>
-    </button>
   );
 }

@@ -1,5 +1,6 @@
 import Webcam from "react-webcam";
 import { VIDEO_CONSTRAINTS } from "../handTracking";
+import { FingerCursor } from "./FingerHoldButton";
 import { StatusPill } from "./StatusPill";
 
 export function TrackingStage({
@@ -214,25 +215,6 @@ export function HoverZone({ countdown, disabled, label, onClick, targetRef, vari
       <button type="button" className="hover-start-btn" onClick={onClick} disabled={disabled}>
         {disabled ? 'Loading…' : countdown !== null ? (countdown || '✓') : label}
       </button>
-    </div>
-  )
-}
-
-export function FingerCursor({ fingerPos, countdown }) {
-  const isHovering = countdown !== null
-  const progress = isHovering ? ((3 - countdown) / 3) * 276.5 : 0
-  return (
-    <div
-      className="hand-cursor"
-      data-hovering={isHovering}
-      style={{ '--cx': `${fingerPos.x * 100}%`, '--cy': `${fingerPos.y * 100}%` }}
-    >
-      {isHovering && (
-        <svg className="cursor-ring" viewBox="0 0 100 100" aria-hidden="true">
-          <circle className="cursor-ring-track" cx="50" cy="50" r="44" />
-          <circle className="cursor-ring-fill" cx="50" cy="50" r="44" style={{ '--progress': progress }} />
-        </svg>
-      )}
     </div>
   )
 }
