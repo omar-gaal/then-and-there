@@ -37,13 +37,40 @@ const ARM_TURN_COOLDOWN_SECONDS = 0.9
 const BUILDING_OCCLUSION_MODE = 'hide'
 const BUILDING_OCCLUSION_OPACITY = 0.08
 const PERFORMANCE_MODE = true
-const PERFORMANCE_STREET_DETAIL_Z = -68
+const PERFORMANCE_STREET_DETAIL_Z = -STREET_REPEAT + 4
 const VISUAL_ROAD_WIDTH = 5.6
 const VISUAL_SIDEWALK_WIDTH = 1.55
 const VISUAL_CURB_X = VISUAL_ROAD_WIDTH / 2 + 0.08
 const VISUAL_SIDEWALK_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH / 2
 const VISUAL_BUILDING_FACE_X = VISUAL_ROAD_WIDTH / 2 + VISUAL_SIDEWALK_WIDTH + 0.22
 const VISUAL_PROP_X = VISUAL_ROAD_WIDTH / 2 + 0.72
+const STREET_BOUNDARY_EPSILON = 0.001
+const MAIN_STREET_BOUNDS = {
+  maxLateral: 3.65,
+  minLateral: -3.65,
+}
+const LEFT_STREET_BOUNDS = {
+  maxLateral: 3.55,
+  minLateral: -3.55,
+}
+const INTERSECTION_BOUNDS = {
+  maxMainLateral: MAIN_STREET_BOUNDS.maxLateral,
+  minMainLateral: -6.05,
+  maxWorldZ: LEFT_STREET_ENTRANCE_Z + 3.65,
+  minWorldZ: LEFT_STREET_ENTRANCE_Z - 3.65,
+}
+const POSTCARD_PALETTE = [
+  0x819fca,
+  0xedc36a,
+  0xc9654f,
+  0x87a77e,
+  0xf0dfc6,
+  0xe2ad84,
+  0xb3c0cf,
+  0xe6b9be,
+  0xf2d28b,
+]
+const ROOF_PALETTE = [0x263445, 0x553d36, 0x744032, 0x314748]
 const HOUSE_BLOCKS = [
   { floors: 4, length: 2.35, shopKind: 'cafe', width: 1.35 },
   { floors: 5, length: 1.7, width: 1.05 },
@@ -122,8 +149,8 @@ export function ThreeStreetScene({
     }
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0xf3d8c8)
-    scene.fog = new THREE.Fog(0xf3d8c8, 34, 108)
+    scene.background = createPaperSkyTexture()
+    scene.fog = new THREE.Fog(0xf5dcca, 38, 112)
 
     const camera = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 160)
     camera.position.set(0, 1.55, 8.8)
@@ -136,10 +163,10 @@ export function ThreeStreetScene({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     mount.appendChild(renderer.domElement)
 
-    const ambient = new THREE.HemisphereLight(0xfff7ea, 0xd8c4ac, 2.9)
+    const ambient = new THREE.HemisphereLight(0xfff4e8, 0xd8c4ac, 3.05)
     scene.add(ambient)
 
-    const sun = new THREE.DirectionalLight(0xffe2bd, 1.85)
+    const sun = new THREE.DirectionalLight(0xffddb2, 1.7)
     sun.position.set(-9, 10, 6)
     sun.castShadow = !PERFORMANCE_MODE
     sun.shadow.mapSize.set(1536, 1536)
@@ -468,7 +495,7 @@ export function ThreeStreetScene({
 function buildStreet(scene) {
   const road = new THREE.Mesh(
     new THREE.BoxGeometry(VISUAL_ROAD_WIDTH, 0.08, STREET_LENGTH),
-    material(0xe8d8bf)
+    paperMaterial(0xead8bd, { repeatX: 3, repeatY: 24 })
   )
   road.position.set(0, -0.04, STREET_CENTER_Z)
   road.receiveShadow = true
@@ -478,10 +505,10 @@ function buildStreet(scene) {
   for (const side of [-1, 1]) {
     const bikeLane = new THREE.Mesh(
       new THREE.BoxGeometry(0.46, 0.025, STREET_LENGTH),
-      material(0xd9c5ad)
+      paperMaterial(0xd8c1a7, { repeatX: 1, repeatY: 22 })
     )
-    const innerTrack = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, STREET_LENGTH), material(0xc8b08f))
-    const outerTrack = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.032, STREET_LENGTH), material(0xf5e5c9))
+    const innerTrack = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, STREET_LENGTH), material(0xc8b08f))
+    const outerTrack = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.032, STREET_LENGTH), material(0xf5e5c9))
 
     bikeLane.position.set(side * (VISUAL_ROAD_WIDTH / 2 - 0.42), 0.025, STREET_CENTER_Z)
     innerTrack.position.set(side * (VISUAL_ROAD_WIDTH / 2 - 0.92), 0.034, STREET_CENTER_Z)
@@ -491,11 +518,11 @@ function buildStreet(scene) {
     addOutlined(scene, outerTrack, 0.003)
   }
 
-  const laneMaterial = material(0xf4ead8)
-  for (let i = 0; i < 44; i += 1) {
-    const line = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.025, 0.72), laneMaterial)
+  const laneMaterial = material(0xf2e5cf)
+  for (let i = 0; i < 18; i += 1) {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.025, 0.52), laneMaterial)
 
-    line.position.set(0, 0.025, 7.5 - i * 3.4)
+    line.position.set(0, 0.025, 6.8 - i * 7.2)
     addOutlined(scene, line, 0.006)
   }
 
@@ -514,9 +541,6 @@ function buildStreet(scene) {
   canal.position.set(-11.9, -0.02, -35)
   scene.add(canal)
 
-  const dome = createDistantDome()
-  dome.position.set(0, 0.05, -58)
-  scene.add(dome)
 }
 
 function addLeftStreetEntrance(scene) {
@@ -601,7 +625,7 @@ function buildLeftStreet(scene) {
   const sideStreetCenterZ = STREET_CENTER_Z
   const road = new THREE.Mesh(
     new THREE.BoxGeometry(sideRoadWidth, 0.08, STREET_LENGTH),
-    material(0xe4d4bd)
+    paperMaterial(0xe9d7bd, { repeatX: 2.7, repeatY: 24 })
   )
 
   road.position.set(0, -0.04, sideStreetCenterZ)
@@ -610,8 +634,8 @@ function buildLeftStreet(scene) {
   addPavingPattern(scene, sideRoadWidth * 0.9, STREET_LENGTH, 0, sideStreetCenterZ, 0.018)
 
   for (const side of [-1, 1]) {
-    const sidewalk = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.14, STREET_LENGTH), material(0xf3eee4))
-    const curb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, STREET_LENGTH), material(0xd8d0c2))
+    const sidewalk = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.14, STREET_LENGTH), paperMaterial(0xf0e5d2, { repeatX: 1.2, repeatY: 20 }))
+    const curb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, STREET_LENGTH), paperMaterial(0xd6c8b5, { repeatX: 0.5, repeatY: 20 }))
 
     sidewalk.position.set(side * 3.9, 0.02, sideStreetCenterZ)
     curb.position.set(side * (sideRoadWidth / 2 + 0.08), 0.08, sideStreetCenterZ)
@@ -681,7 +705,7 @@ function buildLeftStreet(scene) {
 function createSidewalk(scene, side) {
   const sidewalk = new THREE.Mesh(
     new THREE.BoxGeometry(VISUAL_SIDEWALK_WIDTH, 0.14, STREET_LENGTH),
-    material(0xf0e5d2)
+    paperMaterial(0xf0e5d2, { repeatX: 1.2, repeatY: 22 })
   )
   sidewalk.position.set(side * VISUAL_SIDEWALK_X, 0.02, STREET_CENTER_Z)
   sidewalk.receiveShadow = true
@@ -689,7 +713,7 @@ function createSidewalk(scene, side) {
 
   const curb = new THREE.Mesh(
     new THREE.BoxGeometry(0.18, 0.18, STREET_LENGTH),
-    material(0xd5c7b4)
+    paperMaterial(0xd5c7b4, { repeatX: 0.5, repeatY: 22 })
   )
   curb.position.set(side * VISUAL_CURB_X, 0.08, STREET_CENTER_Z)
   addOutlined(scene, curb, 0.008)
@@ -860,111 +884,52 @@ function addLandmarkBikes(scene, side) {
 
 function createBuilding({ depth, height, index, shopKind = '', side, width }) {
   const group = new THREE.Group()
-  const isNearBuilding = !PERFORMANCE_MODE || index < 8 || Boolean(shopKind)
-  const colors = [0x8ba7ca, 0xeac77c, 0x86a889, 0xc86f58, 0xf1e5ce, 0xe0a982, 0xa7b6c8, 0xd7a2bb]
-  const brickColors = [0xb96958, 0xc98267, 0xa65f53]
+  const isNearBuilding = !PERFORMANCE_MODE || index < 10 || Boolean(shopKind)
   const bodyColor = shopKind === 'cafe'
-    ? 0x8ba7ca
+    ? 0x89a6ca
     : shopKind === 'flowers'
-      ? 0xeac77c
-      : index % 5 === 2
-        ? brickColors[index % brickColors.length]
-        : colors[index % colors.length]
-  const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material(bodyColor))
+      ? 0xf0c56d
+      : POSTCARD_PALETTE[index % POSTCARD_PALETTE.length]
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(width, height, depth),
+    paperMaterial(bodyColor, { repeatX: 1.2, repeatY: Math.max(1.4, height / 1.8) })
+  )
 
   body.castShadow = !PERFORMANCE_MODE || index < 8
   body.receiveShadow = true
-  addOutlined(group, body, 0.015)
+  addOutlined(group, body, 0.018)
 
-  if (isNearBuilding && index % 5 === 2) {
-    addBrickLines(group, width, height, depth)
-  }
-  if (isNearBuilding) {
-    addFacadeTexture(group, width, height, depth, bodyColor, index)
-  }
-
-  const roofColor = shopKind === 'cafe' ? 0x594238 : index % 3 === 0 ? 0x334047 : index % 3 === 1 ? 0x67423a : 0x596665
-  const roof = createGableRoof(width * 1.18, depth * 1.08, 0.72 + (index % 4) * 0.08, roofColor)
+  const roofColor = shopKind === 'cafe' ? 0x523b32 : ROOF_PALETTE[index % ROOF_PALETTE.length]
+  const hasGable = shopKind || index % 4 === 0
+  const roof = hasGable
+    ? createGableRoof(width * 1.18, depth * 1.08, 0.68 + (index % 4) * 0.08, roofColor)
+    : createMansardRoof(width * 1.16, depth * 1.08, 0.58 + (index % 3) * 0.06, roofColor)
 
   roof.position.y = height / 2 + 0.02
   roof.castShadow = !PERFORMANCE_MODE || index < 8
   group.add(roof)
 
-  const windowRows = PERFORMANCE_MODE
-    ? Math.max(2, Math.floor(height / 1.25))
-    : Math.max(4, Math.floor(height / 0.72))
-  const windowStep = PERFORMANCE_MODE ? 2 : 1
-  for (let row = 0; row < windowRows; row += windowStep) {
-    for (let col = -1; col <= 1; col += 2) {
-      const recess = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.56, 0.032), material(row % 3 === 0 ? 0xd8c8b8 : 0xe7d7c4))
-      const windowPane = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.45, 0.035), material(row % 4 === 0 ? 0x4b5658 : 0xf8f3e8))
-      const mullionV = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.45, 0.05), material(0xffffff))
-      const mullionH = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.025, 0.052), material(0xffffff))
+  const endFacade = createPaintedBuildingFacade({
+    bodyColor,
+    height,
+    index,
+    isEndFacade: true,
+    shopKind,
+    width,
+  })
 
-      recess.position.set((col * width) / 4, -height / 2 + 0.76 + row * 0.62, depth / 2 + 0.016)
-      windowPane.position.set(recess.position.x, recess.position.y, depth / 2 + 0.04)
-      mullionV?.position.copy(windowPane.position).setZ(depth / 2 + 0.064)
-      mullionH?.position.copy(windowPane.position).setZ(depth / 2 + 0.066)
-      addOutlined(group, recess, 0.004)
-      addOutlined(group, windowPane, 0.004)
-      if (!PERFORMANCE_MODE && row % 4 !== 0) {
-        group.add(mullionV, mullionH)
-      }
+  endFacade.position.z = depth / 2 + 0.036
+  endFacade.scale.x = 0.92
+  group.add(endFacade)
 
-      const sill = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.035, 0.055), material(0xf8f0e2))
+  // Main Street and Left Street buildings receive their visible painted-paper
+  // facade card here; the box remains only the lightweight cardboard volume.
+  group.add(createStreetFacingFacade({ bodyColor, depth, height, index, shopKind, side, width }))
 
-      sill.position.set(windowPane.position.x, windowPane.position.y - 0.29, depth / 2 + 0.04)
-      addOutlined(group, sill, 0.004)
-      if (!PERFORMANCE_MODE && (row + index) % 4 === 1) {
-        const flowerBox = createFlowerBox()
-
-        flowerBox.position.set(windowPane.position.x, windowPane.position.y - 0.34, depth / 2 + 0.075)
-        group.add(flowerBox)
-      }
-    }
-  }
-
-  const shop = new THREE.Mesh(new THREE.BoxGeometry(width * 0.78, 0.52, 0.055), material(0xf9edd9))
-  const awning = new THREE.Mesh(
-    new THREE.BoxGeometry(width * 0.88, 0.09, 0.36),
-    material(index % 2 === 0 ? 0xc96f63 : 0xe2c66f)
-  )
-  const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.22, 0.48, 0.075), material(0x68909a))
-  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.18, 0.07), material(index % 3 === 0 ? 0x7aa39d : 0xe3bd6f))
-  const shopMark = index % 2 === 0
-    ? new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.017, 8, 18), material(0x8d5a3d))
-    : new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.12, 12), material(0xf1b86b))
-
-  shop.position.set(0, -height / 2 + 0.39, depth / 2 + 0.035)
-  awning.position.set(0, -height / 2 + 0.75, depth / 2 + 0.16)
-  door.position.set(side * width * 0.23, -height / 2 + 0.3, depth / 2 + 0.075)
-  sign.position.set(-side * width * 0.16, -height / 2 + 1.02, depth / 2 + 0.09)
-  shopMark.position.set(sign.position.x, sign.position.y, depth / 2 + 0.135)
-  shopMark.rotation.x = Math.PI * 0.5
-  if (!PERFORMANCE_MODE || shopKind || index < 4) {
-    addOutlined(group, shop, 0.006)
-    addOutlined(group, awning, 0.008)
-    addOutlined(group, door, 0.006)
-    addOutlined(group, sign, 0.006)
-    addOutlined(group, shopMark, 0.004)
-  } else {
-    group.add(shop, awning, door, sign)
-  }
-
-  if (shopKind) {
-    const frontage = shopKind === 'cafe'
-      ? createCafeBuildingFrontage(width, height, depth)
-      : createFlowerBuildingFrontage(width, height, depth)
-
-    group.add(frontage)
-  }
-
-  group.add(createStreetFacingFacade({ depth, height, index, shopKind, side, width }))
-
-  if (!PERFORMANCE_MODE || shopKind) for (let i = -1; i <= 1; i += 2) {
+  if (isNearBuilding && shopKind) {
     const box = createFlowerBox()
 
-    box.position.set((i * width) / 4, -height / 2 + 1.35, depth / 2 + 0.07)
+    box.position.set(0, -height / 2 + 1.28, depth / 2 + 0.085)
     group.add(box)
   }
 
@@ -1057,7 +1022,7 @@ function createAvatarInstructionDisplay() {
   }))
 
   sprite.renderOrder = 20
-  sprite.scale.set(7.1, 2.18, 1)
+  sprite.scale.set(7.6, 2.08, 1)
   group.add(sprite)
   group.visible = false
 
@@ -1169,8 +1134,8 @@ function createInstructionBubbleTexture(instruction) {
   const canvas = document.createElement('canvas')
   const context = canvas.getContext('2d')
 
-  canvas.width = 1600
-  canvas.height = 520
+  canvas.width = 1800
+  canvas.height = 560
   if (!context) {
     return null
   }
@@ -1180,26 +1145,23 @@ function createInstructionBubbleTexture(instruction) {
   context.textBaseline = 'middle'
 
   const lines = instruction.split('\n')
-  const maxTextWidth = canvas.width - 240
-  const primarySize = lines.length > 1 ? 94 : 112
-  const secondarySize = 62
-  const startY = lines.length > 1 ? 200 : 260
-  const lineGap = lines.length > 1 ? 118 : 0
+  const maxTextWidth = canvas.width - 320
+  const primarySize = lines.length > 1 ? 124 : 148
+  const secondarySize = 84
+  const startY = lines.length > 1 ? 214 : 280
+  const lineGap = lines.length > 1 ? 136 : 0
 
-  context.shadowColor = 'rgba(25, 28, 28, 0.72)'
-  context.shadowBlur = 28
-  context.shadowOffsetY = 10
+  context.shadowColor = 'rgba(43, 35, 27, 0.5)'
+  context.shadowBlur = 18
+  context.shadowOffsetY = 6
 
   lines.forEach((line, index) => {
     const baseFontSize = index === 0 ? primarySize : secondarySize
     const fontSize = getFittedInstructionFontSize(context, line, baseFontSize, maxTextWidth)
     const y = startY + index * lineGap
 
-    context.font = `950 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`
-    context.lineWidth = index === 0 ? 22 : 14
-    context.strokeStyle = 'rgba(22, 28, 27, 0.88)'
-    context.strokeText(line, canvas.width / 2, y)
-    context.fillStyle = index === 0 ? '#fff8df' : '#ffffff'
+    context.font = getInstructionFont(fontSize)
+    context.fillStyle = index === 0 ? '#fff6dc' : '#fffaf0'
     context.fillText(line, canvas.width / 2, y)
   })
 
@@ -1212,8 +1174,8 @@ function createInstructionBubbleTexture(instruction) {
 function getFittedInstructionFontSize(context, text, fontSize, maxWidth) {
   let nextSize = fontSize
 
-  while (nextSize > 42) {
-    context.font = `950 ${nextSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`
+  while (nextSize > 52) {
+    context.font = getInstructionFont(nextSize)
     if (context.measureText(text).width <= maxWidth) {
       return nextSize
     }
@@ -1221,6 +1183,10 @@ function getFittedInstructionFontSize(context, text, fontSize, maxWidth) {
   }
 
   return nextSize
+}
+
+function getInstructionFont(fontSize) {
+  return `400 ${fontSize}px "Patrick Hand", ui-sans-serif, system-ui, sans-serif`
 }
 
 function createBikeParts() {
@@ -1310,76 +1276,266 @@ function createBikePart(kind) {
   return createSaddlePart()
 }
 
-function createWheelPart() {
+function createIllustratedBikePart(kind, width, height) {
   const group = new THREE.Group()
-  const tire = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 10, 28), material(0x26302f))
-  const hub = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), material(0xd8bd6d))
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
 
-  tire.rotation.y = Math.PI * 0.5
-  addOutlined(group, tire, 0.006)
-  addOutlined(group, hub, 0.006)
-  for (let i = 0; i < 6; i += 1) {
-    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.015, 0.62), material(0xf8f0e2))
+  canvas.width = 384
+  canvas.height = 384
+  if (!context) {
+    const fallback = new THREE.Mesh(new THREE.PlaneGeometry(width, height), paperMaterial(0xfff3dc))
 
-    spoke.rotation.y = Math.PI * 0.5
-    spoke.rotation.z = (Math.PI / 6) * i
-    addOutlined(group, spoke, 0.003)
+    group.add(fallback)
+    return group
   }
+
+  drawBikePartCutout(context, canvas, kind)
+
+  const texture = new THREE.CanvasTexture(canvas)
+
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = 2
+
+  const card = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshLambertMaterial({
+      map: texture,
+      side: THREE.DoubleSide,
+      transparent: true,
+    })
+  )
+
+  card.renderOrder = 4
+  group.add(card)
 
   return group
 }
 
-function createHandlebarPart() {
-  const group = new THREE.Group()
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.055, 0.055), material(0x53605e))
-  const stem = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.055), material(0x53605e))
-  const leftGrip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.07, 0.07), material(0xd79a6f))
-  const rightGrip = leftGrip.clone()
+function drawBikePartCutout(context, canvas, kind) {
+  const w = canvas.width
+  const h = canvas.height
 
-  stem.position.y = -0.22
-  leftGrip.position.x = -0.5
-  rightGrip.position.x = 0.5
-  addOutlined(group, bar, 0.006)
-  addOutlined(group, stem, 0.006)
-  addOutlined(group, leftGrip, 0.005)
-  addOutlined(group, rightGrip, 0.005)
+  context.clearRect(0, 0, w, h)
+  drawPartPaperBacking(context, w, h, kind)
+  drawPartPaperGrain(context, w, h)
+
+  if (kind === 'wheel') {
+    drawWheelIllustration(context, w, h)
+  } else if (kind === 'handlebar') {
+    drawHandlebarIllustration(context)
+  } else if (kind === 'frame') {
+    drawFrameIllustration(context)
+  } else {
+    drawSaddleIllustration(context)
+  }
+}
+
+function drawPartPaperBacking(context, width, height, kind) {
+  context.save()
+  context.fillStyle = 'rgba(255, 242, 214, 0.96)'
+  context.strokeStyle = 'rgba(41, 37, 32, 0.34)'
+  context.lineWidth = 7
+
+  if (kind === 'wheel') {
+    context.beginPath()
+    context.ellipse(width / 2, height / 2, 150, 150, 0, 0, Math.PI * 2)
+    context.fill()
+    context.stroke()
+  } else {
+    drawRoundedCanvasRect(context, 42, 74, width - 84, height - 148, 34)
+    context.fill()
+    context.stroke()
+  }
+
+  context.restore()
+}
+
+function drawPartPaperGrain(context, width, height) {
+  for (let i = 0; i < 90; i += 1) {
+    context.strokeStyle = i % 2 === 0
+      ? 'rgba(255, 255, 255, 0.18)'
+      : 'rgba(101, 79, 65, 0.11)'
+    context.lineWidth = 1 + (i % 4)
+    context.beginPath()
+    context.moveTo((i * 47) % width, (i * 31) % height)
+    context.lineTo(((i * 47) % width) + 36 + (i % 5) * 14, ((i * 31) % height) + ((i % 7) - 3) * 5)
+    context.stroke()
+  }
+}
+
+function drawWheelIllustration(context, width, height) {
+  const cx = width / 2
+  const cy = height / 2
+
+  context.save()
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+  context.strokeStyle = '#26302f'
+  context.lineWidth = 22
+  context.beginPath()
+  context.ellipse(cx, cy, 108, 108, 0, 0, Math.PI * 2)
+  context.stroke()
+  context.strokeStyle = 'rgba(255, 248, 229, 0.84)'
+  context.lineWidth = 8
+  context.beginPath()
+  context.ellipse(cx, cy, 79, 79, 0, 0, Math.PI * 2)
+  context.stroke()
+
+  for (let i = 0; i < 12; i += 1) {
+    const angle = (Math.PI * 2 * i) / 12
+
+    context.strokeStyle = i % 2 === 0 ? 'rgba(77, 91, 89, 0.68)' : 'rgba(248, 240, 226, 0.86)'
+    context.lineWidth = 4
+    context.beginPath()
+    context.moveTo(cx, cy)
+    context.lineTo(cx + Math.cos(angle) * 94, cy + Math.sin(angle) * 94)
+    context.stroke()
+  }
+
+  context.fillStyle = '#d8bd6d'
+  context.strokeStyle = '#26302f'
+  context.lineWidth = 5
+  context.beginPath()
+  context.ellipse(cx, cy, 18, 18, 0, 0, Math.PI * 2)
+  context.fill()
+  context.stroke()
+  context.restore()
+}
+
+function drawHandlebarIllustration(context) {
+  context.save()
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+  context.strokeStyle = '#26302f'
+  context.lineWidth = 11
+  context.beginPath()
+  context.moveTo(86, 172)
+  context.bezierCurveTo(126, 126, 258, 126, 298, 172)
+  context.stroke()
+  context.strokeStyle = '#53605e'
+  context.lineWidth = 8
+  context.beginPath()
+  context.moveTo(88, 170)
+  context.bezierCurveTo(128, 132, 256, 132, 296, 170)
+  context.stroke()
+  context.beginPath()
+  context.moveTo(192, 168)
+  context.lineTo(192, 258)
+  context.stroke()
+  context.strokeStyle = '#d79a6f'
+  context.lineWidth = 18
+  context.beginPath()
+  context.moveTo(70, 178)
+  context.lineTo(112, 156)
+  context.moveTo(314, 178)
+  context.lineTo(272, 156)
+  context.stroke()
+  context.restore()
+}
+
+function drawFrameIllustration(context) {
+  context.save()
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+
+  const points = [
+    [78, 246, 184, 116],
+    [184, 116, 306, 246],
+    [306, 246, 78, 246],
+    [184, 116, 188, 246],
+    [188, 246, 260, 168],
+    [184, 116, 148, 86],
+  ]
+
+  for (const [x1, y1, x2, y2] of points) {
+    context.strokeStyle = '#26302f'
+    context.lineWidth = 18
+    context.beginPath()
+    context.moveTo(x1, y1)
+    context.lineTo(x2, y2)
+    context.stroke()
+    context.strokeStyle = '#6f8faa'
+    context.lineWidth = 11
+    context.beginPath()
+    context.moveTo(x1, y1)
+    context.lineTo(x2, y2)
+    context.stroke()
+  }
+
+  context.fillStyle = '#d8bd6d'
+  context.strokeStyle = '#26302f'
+  context.lineWidth = 5
+  for (const [x, y] of [[78, 246], [184, 116], [306, 246], [188, 246]]) {
+    context.beginPath()
+    context.ellipse(x, y, 10, 10, 0, 0, Math.PI * 2)
+    context.fill()
+    context.stroke()
+  }
+  context.restore()
+}
+
+function drawSaddleIllustration(context) {
+  context.save()
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+  context.strokeStyle = '#26302f'
+  context.lineWidth = 9
+  context.fillStyle = '#5a3f35'
+  context.beginPath()
+  context.moveTo(96, 168)
+  context.bezierCurveTo(132, 116, 248, 116, 292, 160)
+  context.bezierCurveTo(260, 194, 152, 204, 96, 168)
+  context.closePath()
+  context.fill()
+  context.stroke()
+  context.strokeStyle = '#53605e'
+  context.lineWidth = 12
+  context.beginPath()
+  context.moveTo(190, 188)
+  context.lineTo(190, 270)
+  context.stroke()
+  context.strokeStyle = 'rgba(255, 238, 210, 0.32)'
+  context.lineWidth = 5
+  context.beginPath()
+  context.moveTo(132, 158)
+  context.bezierCurveTo(164, 140, 226, 138, 260, 154)
+  context.stroke()
+  context.restore()
+}
+
+function drawRoundedCanvasRect(context, x, y, width, height, radius) {
+  context.beginPath()
+  context.moveTo(x + radius, y)
+  context.lineTo(x + width - radius, y)
+  context.quadraticCurveTo(x + width, y, x + width, y + radius)
+  context.lineTo(x + width, y + height - radius)
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height)
+  context.lineTo(x + radius, y + height)
+  context.quadraticCurveTo(x, y + height, x, y + height - radius)
+  context.lineTo(x, y + radius)
+  context.quadraticCurveTo(x, y, x + radius, y)
+  context.closePath()
+}
+
+function createWheelPart() {
+  return createIllustratedBikePart('wheel', 0.96, 0.96)
+}
+
+function createHandlebarPart() {
+  const group = createIllustratedBikePart('handlebar', 1.08, 0.72)
+
   group.rotation.z = -0.08
 
   return group
 }
 
 function createFramePart() {
-  const group = new THREE.Group()
-  const frameMaterial = material(0x6f8faa)
-  const points = [
-    [new THREE.Vector3(-0.42, -0.22, 0), new THREE.Vector3(-0.05, 0.35, 0)],
-    [new THREE.Vector3(-0.05, 0.35, 0), new THREE.Vector3(0.45, -0.22, 0)],
-    [new THREE.Vector3(0.45, -0.22, 0), new THREE.Vector3(-0.42, -0.22, 0)],
-    [new THREE.Vector3(-0.05, 0.35, 0), new THREE.Vector3(0.02, -0.22, 0)],
-  ]
-
-  for (const [start, end] of points) {
-    const tube = createTubeBetween(start, end, 0.035, frameMaterial)
-
-    addOutlined(group, tube, 0.006)
-  }
-
-  return group
+  return createIllustratedBikePart('frame', 1.16, 0.92)
 }
 
 function createSaddlePart() {
-  const group = new THREE.Group()
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.24), material(0x5a3f35))
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.09, 0.18), material(0x5a3f35))
-  const post = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.34, 0.055), material(0x53605e))
-
-  nose.position.x = 0.3
-  post.position.y = -0.22
-  addOutlined(group, seat, 0.006)
-  addOutlined(group, nose, 0.006)
-  addOutlined(group, post, 0.006)
-
-  return group
+  return createIllustratedBikePart('saddle', 0.86, 0.62)
 }
 
 function createPartHalo() {
@@ -1465,107 +1621,346 @@ function createPaintedText(label, color, width, height) {
   return sprite
 }
 
-function createStreetFacingFacade({ depth, height, index, shopKind, side, width }) {
-  const group = new THREE.Group()
-  const isNearBuilding = !PERFORMANCE_MODE || index < 8 || Boolean(shopKind)
-  const faceX = -side * (width / 2 + 0.028)
-  const signX = -side * (width / 2 + 0.064)
-  const zColumns = PERFORMANCE_MODE ? 2 : Math.max(2, Math.min(4, Math.round(depth / 0.72)))
-  const rows = PERFORMANCE_MODE ? Math.max(2, Math.floor(height / 1.25)) : Math.max(4, Math.floor(height / 0.7))
-  const shopBand = new THREE.Mesh(
-    new THREE.BoxGeometry(0.055, 0.68, depth * 0.86),
-    material(shopKind === 'cafe' ? 0x4a342b : shopKind === 'flowers' ? 0x42633d : 0xf1dfc5),
+function createPaintedBuildingFacade({ bodyColor, height, index, isEndFacade = false, shopKind, width }) {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+
+  canvas.width = 512
+  canvas.height = 768
+  if (!context) {
+    return new THREE.Mesh(new THREE.PlaneGeometry(width, height), material(bodyColor))
+  }
+
+  paintFacadeCanvas(context, canvas, {
+    bodyColor,
+    facadeWidth: width,
+    floors: Math.max(3, Math.floor(height / 0.72)),
+    index,
+    isEndFacade,
+    shopKind,
+  })
+
+  const texture = new THREE.CanvasTexture(canvas)
+
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = 2
+
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width * 0.98, height * 0.98),
+    new THREE.MeshLambertMaterial({
+      map: texture,
+      side: THREE.DoubleSide,
+      transparent: true,
+    })
   )
-  const shopSign = shopKind
-    ? new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.23, depth * 0.72), material(shopKind === 'cafe' ? 0x5a3f31 : 0x315d38))
-    : null
-  const shopText = shopKind
-    ? createPaintedText(shopKind === 'cafe' ? 'COFFEE' : 'BLOMSTER', 0xfff1d6, depth * 0.54, 0.18)
-    : null
 
-  shopBand.position.set(faceX, -height / 2 + 0.4, 0)
-  addOutlined(group, shopBand, 0.004)
-
-  if (shopSign && shopText) {
-    shopSign.position.set(signX, -height / 2 + 0.93, 0)
-    shopText.position.set(signX - side * 0.035, -height / 2 + 0.93, 0)
-    shopText.rotation.y = side * Math.PI * 0.5
-    addOutlined(group, shopSign, 0.004)
-    group.add(shopText)
-  }
-
-  if (shopKind) {
-    const awning = new THREE.Mesh(
-      new THREE.BoxGeometry(0.34, 0.12, depth * 0.78),
-      material(shopKind === 'cafe' ? 0xe7c879 : 0xaebf82),
-    )
-
-    awning.position.set(faceX - side * 0.11, -height / 2 + 0.78, 0)
-    addOutlined(group, awning, 0.004)
-  }
-
-  for (let row = 0; row < rows; row += 1) {
-    const y = -height / 2 + 1.35 + row * 0.58
-
-    if (y > height / 2 - 0.18) {
-      continue
-    }
-
-    for (let col = 0; col < zColumns; col += 1) {
-      const z = -depth * 0.35 + col * ((depth * 0.7) / Math.max(1, zColumns - 1))
-      const darkInterior = (row + col + index) % 5 === 0
-      const recess = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.48, 0.27), material(0xd8c8b8))
-      const pane = new THREE.Mesh(
-        new THREE.BoxGeometry(0.045, 0.38, 0.19),
-        material(darkInterior ? 0x454a48 : 0xf8f1e5),
-      )
-      const mullionV = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.38, 0.018), material(0xffffff))
-      const mullionH = PERFORMANCE_MODE ? null : new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.018, 0.19), material(0xffffff))
-
-      recess.position.set(faceX, y, z)
-      pane.position.set(faceX - side * 0.022, y, z)
-      mullionV?.position.set(faceX - side * 0.05, y, z)
-      mullionH?.position.set(faceX - side * 0.052, y, z)
-      addOutlined(group, recess, 0.003)
-      addOutlined(group, pane, 0.003)
-      if (!PERFORMANCE_MODE && !darkInterior) {
-        group.add(mullionV, mullionH)
-      }
-
-      if (!PERFORMANCE_MODE && (row + col + index) % 6 === 2) {
-        const box = createFlowerBox()
-
-        box.position.set(faceX - side * 0.06, y - 0.29, z)
-        box.rotation.y = side * Math.PI * 0.5
-        group.add(box)
-      }
-    }
-  }
-
-  if ((isNearBuilding && index % 3 === 0) || shopKind) {
-    const dormerCount = PERFORMANCE_MODE ? 1 : Math.min(2, zColumns)
-
-    for (let col = 0; col < dormerCount; col += 1) {
-      const dormer = createDormerWindow()
-      const z = -depth * 0.24 + col * depth * 0.38
-
-      dormer.position.set(faceX - side * 0.12, height / 2 + 0.38, z)
-      dormer.rotation.y = side * Math.PI * 0.5
-      group.add(dormer)
-    }
-  }
-
-  return group
-}
-
-function createTubeBetween(start, end, radius, tubeMaterial) {
-  const direction = end.clone().sub(start)
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, direction.length(), 10), tubeMaterial)
-
-  mesh.position.copy(start.clone().add(end).multiplyScalar(0.5))
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize())
+  mesh.position.y = 0
+  mesh.renderOrder = 2
 
   return mesh
+}
+
+function paintFacadeCanvas(context, canvas, { bodyColor, facadeWidth, floors, index, isEndFacade, shopKind }) {
+  const base = new THREE.Color(bodyColor)
+  const w = canvas.width
+  const h = canvas.height
+  const shopHeight = shopKind ? 176 : 146
+  const marginX = isEndFacade ? 62 : 44
+  const topMargin = 76
+  const windowColumns = getFacadeColumnCount(facadeWidth, isEndFacade, index)
+  const rows = getFacadeRowCount(floors, isEndFacade, shopKind)
+
+  context.clearRect(0, 0, w, h)
+  context.fillStyle = `#${base.getHexString()}`
+  context.fillRect(0, 0, w, h)
+  paintPaperNoise(context, w, h, base, 150)
+  paintGouacheWashes(context, w, h, base, index)
+  paintRoofShadow(context, w, index)
+  paintFacadeRoofDetails(context, w, index, isEndFacade)
+
+  context.strokeStyle = 'rgba(42, 38, 35, 0.44)'
+  context.lineWidth = 4
+  sketchRect(context, 10, 12, w - 20, h - 24, 2, index)
+
+  for (let i = 0; i < 30; i += 1) {
+    const y = 36 + ((i * 79 + index * 31) % (h - 140))
+    const x = 24 + ((i * 53 + index * 17) % (w - 100))
+    const length = 34 + (i % 4) * 22
+
+    context.strokeStyle = i % 2 === 0
+      ? 'rgba(255, 247, 231, 0.26)'
+      : 'rgba(80, 61, 53, 0.14)'
+    context.lineWidth = 3 + (i % 3)
+    context.beginPath()
+    context.moveTo(x, y)
+    context.lineTo(x + length, y + ((i % 5) - 2) * 2)
+    context.stroke()
+  }
+
+  const drawableHeight = h - shopHeight - topMargin - 30
+  const rowGap = drawableHeight / rows
+  const colGap = (w - marginX * 2) / windowColumns
+  const windowWidth = Math.min(58, Math.max(40, colGap * 0.44))
+  const windowHeight = Math.min(84, Math.max(64, rowGap * 0.5))
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < windowColumns; col += 1) {
+      const cx = marginX + colGap * (col + 0.5)
+      const cy = topMargin + rowGap * (row + 0.5)
+      const dark = (row + col + index) % 5 === 0
+
+      paintWindow(context, cx, cy, windowWidth, windowHeight, dark, index + row * 7 + col)
+    }
+  }
+
+  paintShopfront(context, w, h, shopHeight, shopKind, index, isEndFacade, windowColumns)
+}
+
+function getFacadeColumnCount(facadeWidth, isEndFacade, index) {
+  if (isEndFacade) {
+    return facadeWidth > 1.25 || index % 3 === 0 ? 2 : 2
+  }
+
+  if (facadeWidth < 1.75) {
+    return 2
+  }
+
+  if (facadeWidth < 2.55) {
+    return index % 4 === 0 ? 4 : 3
+  }
+
+  return 4
+}
+
+function getFacadeRowCount(floors, isEndFacade, shopKind) {
+  const adjustedFloors = floors - (shopKind ? 1 : 0) - (isEndFacade ? 1 : 0)
+
+  return Math.max(3, Math.min(6, adjustedFloors))
+}
+
+function paintPaperNoise(context, width, height, baseColor, count) {
+  for (let i = 0; i < count; i += 1) {
+    const mix = baseColor.clone().lerp(new THREE.Color(i % 2 === 0 ? 0xffffff : 0x5c4d45), i % 2 === 0 ? 0.16 : 0.1)
+    const alpha = i % 2 === 0 ? 0.18 : 0.1
+
+    context.strokeStyle = `rgba(${Math.round(mix.r * 255)}, ${Math.round(mix.g * 255)}, ${Math.round(mix.b * 255)}, ${alpha})`
+    context.lineWidth = 1 + (i % 5)
+    context.beginPath()
+    context.moveTo((i * 41) % width, (i * 67) % height)
+    context.lineTo(((i * 41) % width) + 40 + (i % 6) * 18, ((i * 67) % height) + ((i % 7) - 3) * 8)
+    context.stroke()
+  }
+}
+
+function paintGouacheWashes(context, width, height, baseColor, index) {
+  for (let i = 0; i < 18; i += 1) {
+    const mix = baseColor.clone().lerp(new THREE.Color(i % 3 === 0 ? 0xffffff : 0x6a554d), i % 3 === 0 ? 0.2 : 0.12)
+    const x = ((i * 97 + index * 43) % width) - 48
+    const y = ((i * 59 + index * 71) % height) - 24
+    const gradient = context.createRadialGradient(x + 60, y + 35, 6, x + 60, y + 35, 78 + (i % 4) * 18)
+
+    gradient.addColorStop(0, `rgba(${Math.round(mix.r * 255)}, ${Math.round(mix.g * 255)}, ${Math.round(mix.b * 255)}, 0.18)`)
+    gradient.addColorStop(1, `rgba(${Math.round(mix.r * 255)}, ${Math.round(mix.g * 255)}, ${Math.round(mix.b * 255)}, 0)`)
+    context.fillStyle = gradient
+    context.fillRect(x, y, 160, 120)
+  }
+}
+
+function paintRoofShadow(context, width, index) {
+  context.fillStyle = index % 2 === 0 ? 'rgba(38, 48, 58, 0.18)' : 'rgba(73, 49, 42, 0.16)'
+  context.beginPath()
+  context.moveTo(8, 14)
+  context.lineTo(width - 10, 8 + (index % 4) * 3)
+  context.lineTo(width - 20, 52 + (index % 3) * 5)
+  context.lineTo(18, 62)
+  context.closePath()
+  context.fill()
+  context.strokeStyle = 'rgba(35, 33, 31, 0.34)'
+  context.lineWidth = 4
+  sketchLine(context, 16, 62, width - 18, 50 + (index % 3) * 5, 2, index)
+}
+
+function paintFacadeRoofDetails(context, width, index, isEndFacade) {
+  const count = isEndFacade ? 1 : index % 3 === 0 ? 4 : 3
+  const gap = width / (count + 1)
+
+  for (let i = 0; i < count; i += 1) {
+    const cx = gap * (i + 1)
+    const y = 26 + (i % 2) * 3
+    const w = isEndFacade ? 36 : 28
+    const h = 42
+
+    context.fillStyle = 'rgba(43, 52, 58, 0.76)'
+    context.beginPath()
+    context.moveTo(cx - w / 2 - 5, y + 10)
+    context.lineTo(cx, y - 4)
+    context.lineTo(cx + w / 2 + 5, y + 10)
+    context.lineTo(cx + w / 2, y + h)
+    context.lineTo(cx - w / 2, y + h)
+    context.closePath()
+    context.fill()
+    context.strokeStyle = 'rgba(33, 31, 30, 0.52)'
+    context.lineWidth = 2.5
+    sketchRect(context, cx - w / 2, y + 11, w, h - 10, 1.2, index + i * 13)
+    context.fillStyle = 'rgba(252, 247, 235, 0.88)'
+    context.fillRect(cx - w * 0.22, y + 22, w * 0.44, h * 0.38)
+    context.strokeStyle = 'rgba(255, 255, 255, 0.86)'
+    context.lineWidth = 2
+    sketchLine(context, cx, y + 23, cx, y + 37, 0.8, index + i)
+  }
+}
+
+function paintWindow(context, cx, cy, width, height, dark, seed) {
+  const frameX = cx - width / 2 - 7
+  const frameY = cy - height / 2 - 7
+
+  context.fillStyle = 'rgba(255, 250, 238, 0.92)'
+  context.fillRect(frameX, frameY, width + 14, height + 14)
+  context.strokeStyle = 'rgba(45, 42, 38, 0.5)'
+  context.lineWidth = 3.2
+  sketchRect(context, frameX, frameY, width + 14, height + 14, 1.6, seed)
+  context.fillStyle = dark ? '#454949' : '#f7efe2'
+  context.fillRect(cx - width / 2, cy - height / 2, width, height)
+  context.strokeStyle = 'rgba(255, 255, 255, 0.94)'
+  context.lineWidth = 4.4
+  sketchLine(context, cx, cy - height / 2 + 3, cx + ((seed % 3) - 1), cy + height / 2 - 3, 1.2, seed + 1)
+  sketchLine(context, cx - width / 2 + 3, cy, cx + width / 2 - 3, cy + ((seed % 4) - 1), 1.2, seed + 2)
+  context.strokeStyle = 'rgba(255, 255, 255, 0.55)'
+  context.lineWidth = 2
+  sketchLine(context, cx - width * 0.25, cy - height / 2 + 6, cx - width * 0.25, cy + height / 2 - 5, 1, seed + 3)
+  context.fillStyle = 'rgba(255, 247, 230, 0.78)'
+  context.fillRect(cx - width / 2 - 10, cy + height / 2 + 8, width + 20, 8)
+}
+
+function sketchRect(context, x, y, width, height, wobble, seed) {
+  sketchLine(context, x, y, x + width, y + pseudoJitter(seed, 1) * wobble, wobble, seed)
+  sketchLine(context, x + width, y, x + width + pseudoJitter(seed, 2) * wobble, y + height, wobble, seed + 3)
+  sketchLine(context, x + width, y + height, x, y + height + pseudoJitter(seed, 4) * wobble, wobble, seed + 6)
+  sketchLine(context, x, y + height, x + pseudoJitter(seed, 5) * wobble, y, wobble, seed + 9)
+}
+
+function sketchLine(context, x1, y1, x2, y2, wobble, seed) {
+  context.beginPath()
+  context.moveTo(x1, y1)
+  context.lineTo(
+    (x1 + x2) / 2 + pseudoJitter(seed, 7) * wobble,
+    (y1 + y2) / 2 + pseudoJitter(seed, 11) * wobble,
+  )
+  context.lineTo(x2, y2)
+  context.stroke()
+}
+
+function pseudoJitter(seed, salt) {
+  return Math.sin(seed * 12.9898 + salt * 78.233) * 0.5
+}
+
+function paintShopfront(context, width, height, shopHeight, shopKind, index, isEndFacade, windowColumns) {
+  const shopTop = height - shopHeight
+  const darkFront = shopKind === 'cafe' ? '#413934' : shopKind === 'flowers' ? '#fff1d8' : 'rgba(255, 241, 216, 0.72)'
+  const signColor = shopKind === 'flowers' ? '#667f5a' : shopKind === 'cafe' ? '#5a4638' : '#c98b63'
+  const label = isEndFacade
+    ? ''
+    : shopKind === 'cafe'
+      ? 'KAFFE'
+      : shopKind === 'flowers'
+        ? 'BLOMSTER'
+        : index % 2 === 0
+          ? 'NYHAVN'
+          : ''
+  const inset = isEndFacade ? 74 : 28
+  const doorWidth = isEndFacade ? 76 : 70
+  const doorHeight = 108
+  const doorX = isEndFacade
+    ? width / 2 - doorWidth / 2
+    : index % 2 === 0
+      ? width - inset - doorWidth - 12
+      : inset + 12
+  const doorY = shopTop + shopHeight - doorHeight - 18
+
+  context.fillStyle = darkFront
+  context.fillRect(inset, shopTop + 24, width - inset * 2, shopHeight - 42)
+  context.strokeStyle = 'rgba(41, 38, 34, 0.42)'
+  context.lineWidth = 5
+  sketchRect(context, inset, shopTop + 24, width - inset * 2, shopHeight - 42, 2, index + 31)
+
+  if (label) {
+    context.fillStyle = signColor
+    context.fillRect(76, shopTop - 10, width - 152, 46)
+    context.strokeStyle = 'rgba(44, 39, 34, 0.36)'
+    sketchRect(context, 76, shopTop - 10, width - 152, 46, 1.6, index + 42)
+  }
+
+  if (label) {
+    context.fillStyle = '#fff3dd'
+    context.font = '800 30px Georgia, Times New Roman, serif'
+    context.textAlign = 'center'
+    context.textBaseline = 'middle'
+    context.fillText(label, width / 2, shopTop + 13)
+  }
+
+  paintDoor(context, doorX, doorY, doorWidth, doorHeight, index)
+
+  const availableWidth = width - inset * 2 - doorWidth - 46
+  const smallWindowCount = Math.max(1, Math.min(3, windowColumns - (isEndFacade ? 1 : 0)))
+  const startX = doorX < width / 2 ? doorX + doorWidth + 34 : inset + 24
+  const smallGap = availableWidth / smallWindowCount
+
+  for (let i = 0; i < smallWindowCount; i += 1) {
+    const cx = startX + smallGap * (i + 0.5)
+    const cy = shopTop + 86
+
+    if (cx > inset + 34 && cx < width - inset - 34) {
+      paintWindow(context, cx, cy, 46, 58, shopKind === 'cafe' && i % 2 === 0, index + 80 + i)
+    }
+  }
+
+  if (shopKind === 'flowers') {
+    for (let i = 0; i < 7; i += 1) {
+      context.fillStyle = ['#d68aa0', '#e2c760', '#f4eee1', '#93a978'][i % 4]
+      context.beginPath()
+      context.arc(80 + i * 28, shopTop + 112 - (i % 2) * 12, 11, 0, Math.PI * 2)
+      context.fill()
+    }
+  }
+}
+
+function paintDoor(context, x, y, width, height, seed) {
+  context.fillStyle = '#344247'
+  context.fillRect(x - 8, y - 8, width + 16, height + 16)
+  context.fillStyle = seed % 3 === 0 ? '#2f3d40' : seed % 3 === 1 ? '#5d4439' : '#42504d'
+  context.fillRect(x, y, width, height)
+  context.strokeStyle = 'rgba(255, 247, 230, 0.74)'
+  context.lineWidth = 3
+  sketchRect(context, x + 8, y + 10, width - 16, height - 22, 1.4, seed + 94)
+  sketchLine(context, x + width / 2, y + 14, x + width / 2, y + height - 14, 1, seed + 95)
+  context.fillStyle = 'rgba(244, 219, 154, 0.92)'
+  context.beginPath()
+  context.arc(x + width - 16, y + height * 0.56, 4, 0, Math.PI * 2)
+  context.fill()
+  context.strokeStyle = 'rgba(39, 35, 32, 0.52)'
+  context.lineWidth = 3
+  sketchRect(context, x - 8, y - 8, width + 16, height + 16, 1.8, seed + 96)
+}
+
+function createStreetFacingFacade({ bodyColor, depth, height, index, shopKind, side, width }) {
+  const group = new THREE.Group()
+  const faceX = -side * (width / 2 + 0.028)
+  // This is the facade texture generator used by every street-facing
+  // townhouse card. Windows, doors, shopfronts, signs, and linework are
+  // painted into the canvas texture instead of built as separate meshes.
+  const facade = createPaintedBuildingFacade({
+    bodyColor,
+    height,
+    index,
+    shopKind,
+    width: depth,
+  })
+
+  facade.position.set(faceX - side * 0.034, 0, 0)
+  facade.rotation.y = -side * Math.PI * 0.5
+  group.add(facade)
+
+  return group
 }
 
 function createAvatarLimb(radius, limbMaterial) {
@@ -1775,13 +2170,15 @@ function updateAvatar(avatar, motionState, tracking, elapsed, keys) {
     motionState.walkPhase += THREE.MathUtils.clamp(motionState.smoothedSpeed * 42, 0.012, 0.08)
   }
   const forwardStep = Math.max(-motionState.vz, 0) * 0.82
+  const lateralStep = motionState.vx * 0.82
   const forward = forwardVectorFromHeading(motionState.targetHeading)
 
   motionState.playerWorldX += forward.x * forwardStep
   motionState.playerWorldZ += forward.z * forwardStep
+  motionState.lateralOffset += lateralStep
+  applyStreetBoundaryCollision(motionState)
   motionState.worldTravel = -motionState.playerWorldZ
   motionState.scrolling = forwardStep > 0.002
-  motionState.lateralOffset = THREE.MathUtils.clamp(motionState.lateralOffset + motionState.vx * 0.82, -2.45, 2.45)
   motionState.x = motionState.lateralOffset
   motionState.z += (3.15 + Math.max(motionState.vz, 0) * 1.25 - motionState.z) * 0.08
   motionState.z = THREE.MathUtils.clamp(motionState.z, 2.85, 3.25)
@@ -2152,6 +2549,119 @@ function rightVectorFromHeading(heading) {
   return new THREE.Vector3(Math.cos(heading), 0, Math.sin(heading))
 }
 
+function applyStreetBoundaryCollision(motionState) {
+  const before = getAvatarBoundaryWorldPosition(motionState)
+  const boundary = motionState.currentAreaId === 'leftStreet'
+    ? clampLeftStreetBoundary(motionState, before)
+    : clampMainStreetBoundary(motionState, before)
+  const after = getAvatarBoundaryWorldPosition(motionState)
+
+  motionState.blockedByBoundary = boundary.blocked
+  motionState.streetBoundaryDebug = {
+    ...boundary.debug,
+    avatarWorldX: after.x,
+    avatarWorldZ: after.z,
+  }
+}
+
+function clampMainStreetBoundary(motionState, avatarWorldPosition) {
+  const inIntersectionOpening = isWorldZInIntersectionOpening(avatarWorldPosition.z)
+  const enteringLeftStreet = isHeadingNear(motionState.targetHeading, LEFT_STREET_HEADING)
+  const useIntersectionBounds = inIntersectionOpening &&
+    (enteringLeftStreet || avatarWorldPosition.x < MAIN_STREET_BOUNDS.minLateral)
+  const bounds = useIntersectionBounds
+    ? {
+        maxLateral: INTERSECTION_BOUNDS.maxMainLateral,
+        minLateral: INTERSECTION_BOUNDS.minMainLateral,
+        streetId: 'intersection',
+      }
+    : {
+        ...MAIN_STREET_BOUNDS,
+        streetId: 'mainStreet',
+      }
+  const clampedWorldX = THREE.MathUtils.clamp(
+    avatarWorldPosition.x,
+    bounds.minLateral,
+    bounds.maxLateral,
+  )
+  const blocked = Math.abs(clampedWorldX - avatarWorldPosition.x) > STREET_BOUNDARY_EPSILON
+
+  if (blocked) {
+    moveAvatarBoundaryWorldX(motionState, clampedWorldX - avatarWorldPosition.x)
+  }
+
+  return {
+    blocked,
+    debug: {
+      localLateral: clampedWorldX,
+      maxLateral: bounds.maxLateral,
+      minLateral: bounds.minLateral,
+      streetId: bounds.streetId,
+    },
+  }
+}
+
+function clampLeftStreetBoundary(motionState, avatarWorldPosition) {
+  const localLateral = avatarWorldPosition.z - LEFT_STREET_ENTRANCE_Z
+  const clampedLocalLateral = THREE.MathUtils.clamp(
+    localLateral,
+    LEFT_STREET_BOUNDS.minLateral,
+    LEFT_STREET_BOUNDS.maxLateral,
+  )
+  const blocked = Math.abs(clampedLocalLateral - localLateral) > STREET_BOUNDARY_EPSILON
+
+  if (blocked) {
+    moveAvatarBoundaryWorldZ(motionState, clampedLocalLateral - localLateral)
+  }
+
+  return {
+    blocked,
+    debug: {
+      localLateral: clampedLocalLateral,
+      maxLateral: LEFT_STREET_BOUNDS.maxLateral,
+      minLateral: LEFT_STREET_BOUNDS.minLateral,
+      streetId: 'leftStreet',
+    },
+  }
+}
+
+function getAvatarBoundaryWorldPosition(motionState) {
+  const right = rightVectorFromHeading(motionState.currentHeading)
+
+  return {
+    x: motionState.playerWorldX + right.x * motionState.lateralOffset,
+    z: motionState.playerWorldZ + motionState.z + right.z * motionState.lateralOffset,
+  }
+}
+
+function moveAvatarBoundaryWorldX(motionState, deltaX) {
+  const right = rightVectorFromHeading(motionState.currentHeading)
+
+  if (Math.abs(right.x) > 0.12) {
+    motionState.lateralOffset += deltaX / right.x
+  } else {
+    motionState.playerWorldX += deltaX
+  }
+}
+
+function moveAvatarBoundaryWorldZ(motionState, deltaZ) {
+  const right = rightVectorFromHeading(motionState.currentHeading)
+
+  if (Math.abs(right.z) > 0.12) {
+    motionState.lateralOffset += deltaZ / right.z
+  } else {
+    motionState.playerWorldZ += deltaZ
+  }
+}
+
+function isWorldZInIntersectionOpening(worldZ) {
+  return worldZ >= INTERSECTION_BOUNDS.minWorldZ && worldZ <= INTERSECTION_BOUNDS.maxWorldZ
+}
+
+function isHeadingNear(current, target) {
+  return Math.abs(angleDelta(current, target)) < 0.35
+}
+
 function updateHeadingAndArea(motionState, bikeParts, pickupState, keys, tracking, elapsed, onRecalibrateBodyLean) {
   const canTransition = elapsed - motionState.lastTransitionAt > 1
   const atJunction = isNearLeftStreetJunction(motionState)
@@ -2503,6 +3013,13 @@ function publishWorldDebug(motionState, onWorldDebug, elapsed, scene, renderer, 
     avatarBaseYaw: AVATAR_BASE_YAW,
     avatarWorldX: avatarWorldPosition.x,
     avatarWorldZ: avatarWorldPosition.z,
+    blockedByBoundary: motionState.blockedByBoundary ?? false,
+    boundaryAvatarWorldX: motionState.streetBoundaryDebug?.avatarWorldX ?? avatarWorldPosition.x,
+    boundaryAvatarWorldZ: motionState.streetBoundaryDebug?.avatarWorldZ ?? avatarWorldPosition.z,
+    boundaryLocalLateral: motionState.streetBoundaryDebug?.localLateral ?? mapPlayer.localLateral,
+    boundaryMaxLateral: motionState.streetBoundaryDebug?.maxLateral ?? MAIN_STREET_BOUNDS.maxLateral,
+    boundaryMinLateral: motionState.streetBoundaryDebug?.minLateral ?? MAIN_STREET_BOUNDS.minLateral,
+    boundaryStreetId: motionState.streetBoundaryDebug?.streetId ?? motionState.currentAreaId,
     currentAreaId: motionState.currentAreaId,
     currentHeading: motionState.currentHeading,
     effectiveAvatarYaw: motionState.facingAngle,
@@ -3596,20 +4113,28 @@ function createGableRoof(width, depth, height, color) {
   return group
 }
 
-function createDormerWindow() {
+function createMansardRoof(width, depth, height, color) {
   const group = new THREE.Group()
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.36, 0.28), material(0x3f4647))
-  const pane = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.23, 0.035), material(0xf8f1e5))
-  const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.23, 0.04), material(0xffffff))
-  const roof = createGableRoof(0.34, 0.36, 0.18, 0x30383d)
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(width, height, depth),
+    paperMaterial(color, { repeatX: 1.4, repeatY: 0.7 })
+  )
+  const cap = new THREE.Mesh(
+    new THREE.BoxGeometry(width * 0.92, 0.08, depth * 1.04),
+    paperMaterial(tintColor(color, 0xffffff, 0.1), { repeatX: 1.2, repeatY: 0.5 })
+  )
 
-  body.position.y = 0.12
-  pane.position.set(0, 0.12, 0.16)
-  mullion.position.set(0, 0.12, 0.18)
-  roof.position.y = 0.3
-  addOutlined(group, body, 0.004)
-  addOutlined(group, pane, 0.003)
-  group.add(mullion, roof)
+  roof.position.y = height * 0.42
+  cap.position.y = height * 0.86
+  addOutlined(group, roof, 0.012)
+  addOutlined(group, cap, 0.005)
+
+  for (let i = -1; i <= 1; i += 2) {
+    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.38, 0.17), paperMaterial(0xeee5d8))
+
+    chimney.position.set(i * width * 0.28, height + 0.1, -depth * 0.18)
+    addOutlined(group, chimney, 0.005)
+  }
 
   return group
 }
@@ -3630,76 +4155,44 @@ function addRoofStrokes(group, width, depth, height, color) {
   }
 }
 
-function addBrickLines(group, width, height, depth) {
-  const brickMaterial = material(0x8d5a4d)
-
-  for (let row = 0; row < Math.floor(height / 0.34); row += 1) {
-    const line = new THREE.Mesh(new THREE.BoxGeometry(width * 0.86, 0.018, 0.025), brickMaterial)
-
-    line.position.set(0, -height / 2 + 0.42 + row * 0.34, depth / 2 + 0.035)
-    group.add(line)
-  }
-
-  for (let col = -2; col <= 2; col += 1) {
-    const line = new THREE.Mesh(new THREE.BoxGeometry(0.018, height * 0.7, 0.025), brickMaterial)
-
-    line.position.set((col * width) / 5, -0.05, depth / 2 + 0.038)
-    group.add(line)
-  }
-}
-
-function addFacadeTexture(group, width, height, depth, bodyColor, index) {
-  const light = material(tintColor(bodyColor, 0xffffff, 0.24))
-  const shadow = material(tintColor(bodyColor, 0x6f5d52, 0.16))
-
-  for (let i = 0; i < 12; i += 1) {
-    const stroke = new THREE.Mesh(
-      new THREE.BoxGeometry(width * (0.16 + (i % 4) * 0.06), 0.018, 0.022),
-      i % 3 === 0 ? shadow : light,
-    )
-    const x = -width * 0.34 + ((i * 37 + index * 11) % 68) / 100 * width
-    const y = -height / 2 + 0.55 + ((i * 53 + index * 17) % 78) / 100 * (height - 0.9)
-
-    stroke.position.set(x, y, depth / 2 + 0.036)
-    stroke.rotation.z = ((i % 5) - 2) * 0.018
-    group.add(stroke)
-  }
-}
-
 function addPavingPattern(scene, width, length, x, z, y) {
-  const stoneA = material(0xf4e8d6)
+  const stoneA = material(0xf5e8d4)
   const stoneB = material(0xd8c9b7)
-  const seamMaterial = material(0xd5c2aa)
-  const rows = PERFORMANCE_MODE ? 4 : 9
-  const seamCount = PERFORMANCE_MODE ? 14 : 46
-  const stoneCount = PERFORMANCE_MODE ? 8 : 34
+  const stoneC = material(0xe8d4be)
+  const seamMaterial = material(0xcfbea9)
+  const rows = PERFORMANCE_MODE ? 5 : 9
+  const seamCount = PERFORMANCE_MODE ? 10 : 34
+  const stoneCount = PERFORMANCE_MODE ? 11 : 34
 
   for (let row = 1; row < rows; row += 1) {
-    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.014, length * 0.96), seamMaterial)
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.014, length * 0.92), seamMaterial)
 
     seam.position.set(x - width / 2 + row * (width / rows), y + 0.002, z)
+    seam.rotation.y = ((row % 3) - 1) * 0.006
     scene.add(seam)
   }
 
   for (let i = 0; i < seamCount; i += 1) {
-    const cross = new THREE.Mesh(new THREE.BoxGeometry(width * 0.9, 0.013, 0.028), seamMaterial)
+    const cross = new THREE.Mesh(new THREE.BoxGeometry(width * (0.48 + (i % 3) * 0.12), 0.013, 0.024), seamMaterial)
 
-    cross.position.set(x, y + 0.003, z + length / 2 - 1.6 - i * (PERFORMANCE_MODE ? 8.6 : 2.55))
+    cross.position.set(x + ((i % 5) - 2) * 0.08, y + 0.003, z + length / 2 - 1.6 - i * (PERFORMANCE_MODE ? 11.2 : 3.1))
+    cross.rotation.y = ((i % 7) - 3) * 0.015
     scene.add(cross)
   }
 
   for (let row = 0; row < rows; row += 1) {
     for (let i = 0; i < stoneCount; i += 1) {
       const stone = new THREE.Mesh(
-        new THREE.BoxGeometry(0.58 + (i % 3) * 0.08, 0.012, 0.045),
-        (i + row) % 4 === 0 ? stoneB : stoneA,
+        new THREE.BoxGeometry(0.34 + (i % 4) * 0.11, 0.012, 0.035 + (row % 2) * 0.012),
+        (i + row) % 6 === 0 ? stoneB : (i + row) % 5 === 0 ? stoneC : stoneA,
       )
 
       stone.position.set(
-        x - width / 2 + 0.42 + row * (width / rows),
+        x - width / 2 + 0.32 + row * (width / rows) + ((i % 3) - 1) * 0.035,
         y,
-        z + length / 2 - 2.4 - i * (PERFORMANCE_MODE ? 16 : 4.3) - (row % 2) * 1.15,
+        z + length / 2 - 2.4 - i * (PERFORMANCE_MODE ? 12.8 : 4.3) - (row % 2) * 1.15,
       )
+      stone.rotation.y = ((i + row) % 5 - 2) * 0.02
       scene.add(stone)
     }
   }
@@ -3724,20 +4217,30 @@ function createTree() {
 
 function createLamp() {
   const group = new THREE.Group()
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 2.1, 8), material(0x3f4a49))
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.045, 0.045), material(0x3f4a49))
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.16, 10), material(0x4f8f83))
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), material(0xffedbd))
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.04, 2.05, 8), material(0x343b3a))
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.16, 10), material(0x343b3a))
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.038, 0.038), material(0x343b3a))
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.16, 10), material(0x4f8f83))
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), paperMaterial(0xffefc1))
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.46), new THREE.MeshBasicMaterial({
+    color: 0xfff1c7,
+    opacity: 0.24,
+    transparent: true,
+  }))
 
+  base.position.y = 0.08
   pole.position.y = 1.05
   arm.position.set(0.23, 2.05, 0)
   cap.position.set(0.54, 1.98, 0)
   cap.rotation.x = Math.PI
   bulb.position.set(0.54, 1.88, 0)
+  glow.position.set(0.54, 1.82, -0.012)
+  addOutlined(group, base, 0.006)
   addOutlined(group, pole, 0.006)
   addOutlined(group, arm, 0.006)
   addOutlined(group, cap, 0.006)
   addOutlined(group, bulb, 0.006)
+  group.add(glow)
 
   return group
 }
@@ -3765,7 +4268,7 @@ function createBench() {
 
 function createPlanter() {
   const group = new THREE.Group()
-  const pot = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.26, 0.36), material(0xc58d70))
+  const pot = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.24, 0.34), paperMaterial(0xc58d70))
   const flowerCount = PERFORMANCE_MODE ? 2 : 5
 
   pot.position.y = 0.13
@@ -3789,6 +4292,7 @@ function createParkedBike(index) {
   const frameColor = [0xc65f52, 0x638f9c, 0xd7b962, 0x607d87][index % 4]
   const frame = material(frameColor)
   const metal = material(0x53605e)
+  const paperBacking = new THREE.Mesh(new THREE.PlaneGeometry(0.98, 0.72), paperMaterial(0xfff0d7))
   const wheelA = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.018, 8, 22), tire)
   const wheelB = wheelA.clone()
   const tubeA = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.035, 0.035), frame)
@@ -3796,6 +4300,7 @@ function createParkedBike(index) {
   const handle = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.035, 0.035), metal)
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.045, 0.08), material(0x5a3f35))
 
+  paperBacking.position.set(0, 0.36, -0.035)
   wheelA.position.set(-0.28, 0.22, 0)
   wheelB.position.set(0.28, 0.22, 0)
   tubeA.position.set(0, 0.35, 0)
@@ -3806,6 +4311,7 @@ function createParkedBike(index) {
   handle.rotation.z = 0.35
   seat.position.set(-0.15, 0.58, 0)
 
+  addOutlined(group, paperBacking, 0.004)
   for (const mesh of [wheelA, wheelB, tubeA, tubeB, handle, seat]) {
     addOutlined(group, mesh, 0.005)
   }
@@ -3860,47 +4366,6 @@ function createCafeSet(index) {
     umbrella.position.set(0, 0.46, 0)
     group.add(umbrella)
   }
-
-  return group
-}
-
-function createCafeBuildingFrontage(width, height, depth) {
-  const group = new THREE.Group()
-  const shopfront = new THREE.Mesh(new THREE.BoxGeometry(width * 0.92, 0.72, 0.075), material(0x3f3834))
-  const warmWindow = new THREE.Mesh(new THREE.BoxGeometry(width * 0.34, 0.42, 0.09), material(0xf2d3a1))
-  const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.24, 0.58, 0.1), material(0x4b5658))
-  const sign = new THREE.Mesh(new THREE.BoxGeometry(width * 0.7, 0.22, 0.09), material(0x594238))
-  const text = createPaintedText('KAFFE', 0xf8ead4, width * 0.62, 0.2)
-
-  shopfront.position.set(0, -height / 2 + 0.42, depth / 2 + 0.085)
-  warmWindow.position.set(-width * 0.18, -height / 2 + 0.42, depth / 2 + 0.14)
-  door.position.set(width * 0.25, -height / 2 + 0.35, depth / 2 + 0.15)
-  sign.position.set(0, -height / 2 + 0.96, depth / 2 + 0.14)
-  text.position.set(0, -height / 2 + 0.96, depth / 2 + 0.2)
-  addOutlined(group, shopfront, 0.005)
-  addOutlined(group, warmWindow, 0.004)
-  addOutlined(group, door, 0.004)
-  addOutlined(group, sign, 0.004)
-  group.add(text)
-
-  return group
-}
-
-function createFlowerBuildingFrontage(width, height, depth) {
-  const group = new THREE.Group()
-  const shopfront = new THREE.Mesh(new THREE.BoxGeometry(width * 0.92, 0.66, 0.075), material(0xf6e8d2))
-  const awning = new THREE.Mesh(new THREE.BoxGeometry(width * 0.96, 0.13, 0.34), material(0xc98c9e))
-  const sign = new THREE.Mesh(new THREE.BoxGeometry(width * 0.78, 0.22, 0.09), material(0x7b8f74))
-  const text = createPaintedText('BLOMSTER', 0xfff4df, width * 0.74, 0.18)
-
-  shopfront.position.set(0, -height / 2 + 0.4, depth / 2 + 0.085)
-  awning.position.set(0, -height / 2 + 0.78, depth / 2 + 0.17)
-  sign.position.set(0, -height / 2 + 1.02, depth / 2 + 0.14)
-  text.position.set(0, -height / 2 + 1.02, depth / 2 + 0.2)
-  addOutlined(group, shopfront, 0.005)
-  addOutlined(group, awning, 0.006)
-  addOutlined(group, sign, 0.004)
-  group.add(text)
 
   return group
 }
@@ -4099,33 +4564,6 @@ function createCrosswalk() {
   return group
 }
 
-function createDistantDome() {
-  const group = new THREE.Group()
-  const base = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.15, 0.5), material(0xeadfcf))
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(1.05, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.52), material(0x609f9b))
-  const ribs = material(0xd9b466)
-  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.82, 14), material(0xd9b466))
-
-  base.position.y = 0.58
-  dome.position.y = 1.16
-  spire.position.y = 2.45
-  addOutlined(group, base, 0.006)
-  addOutlined(group, dome, 0.008)
-  addOutlined(group, spire, 0.004)
-
-  for (let i = -3; i <= 3; i += 1) {
-    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.82, 0.035), ribs)
-
-    rib.position.set(i * 0.25, 1.62 - Math.abs(i) * 0.07, 0.26)
-    rib.rotation.z = i * -0.12
-    group.add(rib)
-  }
-
-  group.scale.set(1.35, 1.35, 1.35)
-
-  return group
-}
-
 function addAmbientDetails(scene) {
   const clouds = []
   const trees = []
@@ -4160,9 +4598,51 @@ function addAmbientDetails(scene) {
 const textureCache = new Map()
 
 function material(color) {
+  return paperMaterial(color)
+}
+
+function createPaperSkyTexture() {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+
+  canvas.width = 512
+  canvas.height = 512
+  if (!context) {
+    return new THREE.Color(0xf5dcca)
+  }
+
+  const gradient = context.createLinearGradient(0, 0, 0, canvas.height)
+
+  gradient.addColorStop(0, '#f6d8c8')
+  gradient.addColorStop(0.62, '#f5decc')
+  gradient.addColorStop(1, '#ead7c3')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, canvas.width, canvas.height)
+
+  for (let i = 0; i < 180; i += 1) {
+    const alpha = i % 3 === 0 ? 0.16 : 0.08
+
+    context.strokeStyle = i % 2 === 0
+      ? `rgba(255, 250, 240, ${alpha})`
+      : `rgba(130, 103, 92, ${alpha})`
+    context.lineWidth = 1 + (i % 4)
+    context.beginPath()
+    context.moveTo((i * 37) % canvas.width, (i * 61) % canvas.height)
+    context.lineTo(((i * 37) % canvas.width) + 80 + (i % 6) * 24, ((i * 61) % canvas.height) + ((i % 9) - 4) * 9)
+    context.stroke()
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+
+  texture.colorSpace = THREE.SRGBColorSpace
+
+  return texture
+}
+
+function paperMaterial(color, options = {}) {
   return new THREE.MeshLambertMaterial({
     color,
-    map: getPaintTexture(color),
+    map: getPaintTexture(color, options),
   })
 }
 
@@ -4191,9 +4671,13 @@ function addOutlined(parent, mesh, thickness) {
   parent.add(outline)
 }
 
-function getPaintTexture(color) {
-  if (textureCache.has(color)) {
-    return textureCache.get(color)
+function getPaintTexture(color, options = {}) {
+  const repeatX = options.repeatX ?? 2
+  const repeatY = options.repeatY ?? 2
+  const cacheKey = `${color}-${repeatX}-${repeatY}`
+
+  if (textureCache.has(cacheKey)) {
+    return textureCache.get(cacheKey)
   }
 
   const canvas = document.createElement('canvas')
@@ -4225,9 +4709,9 @@ function getPaintTexture(color) {
 
   texture.wrapS = THREE.RepeatWrapping
   texture.wrapT = THREE.RepeatWrapping
-  texture.repeat.set(2, 2)
+  texture.repeat.set(repeatX, repeatY)
   texture.colorSpace = THREE.SRGBColorSpace
-  textureCache.set(color, texture)
+  textureCache.set(cacheKey, texture)
 
   return texture
 }
