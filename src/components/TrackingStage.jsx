@@ -115,7 +115,9 @@ export function TrackingStage({
         ))}
       </div>
 
-      <div ref={puckRef} className="control-object" role="img" aria-label="Pastry basket">🧺</div>
+      <div ref={puckRef} className="control-object" role="img" aria-label="Pastry basket">
+        <img src="/paris%20background/basket-paris.png" alt="" aria-hidden="true" />
+      </div>
 
       {/* HUD chips , top-left, visible while playing */}
       {isPlaying && (

@@ -479,6 +479,13 @@ h1 {
   will-change: left, top, transform;
 }
 
+.control-object img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
 .control-object[data-searching] {
   opacity: 0.38;
 }
