@@ -48,7 +48,7 @@ export function LandingExperience({
     <section className="landing-scene" aria-label="Then and There landing page">
       <img
         className="landing-map"
-        src="/map-svgrepo-com.svg"
+        src="/painted-landing-map.png"
         alt="Illustrated map for the Then and There journey"
       />
 
@@ -75,20 +75,20 @@ export function LandingExperience({
           position={{ x: 0.28, y: 0.84 }}
         />
         <HoverChoiceButton
-          ariaLabel="Choose Copenhagen"
-          className="is-copenhagen"
-          fingerPos={fingerPos}
-          label="Copenhagen"
-          onChoose={onChooseCopenhagen}
-          onCountdownChange={setActiveCountdown}
-          position={{ x: 0.5, y: 0.84 }}
-        />
-        <HoverChoiceButton
           ariaLabel="Choose Amsterdam"
           className="is-amsterdam"
           fingerPos={fingerPos}
           label="Amsterdam"
           onChoose={onChooseAmsterdam}
+          onCountdownChange={setActiveCountdown}
+          position={{ x: 0.5, y: 0.84 }}
+        />
+        <HoverChoiceButton
+          ariaLabel="Choose Copenhagen"
+          className="is-copenhagen"
+          fingerPos={fingerPos}
+          label="Copenhagen"
+          onChoose={onChooseCopenhagen}
           onCountdownChange={setActiveCountdown}
           position={{ x: 0.72, y: 0.84 }}
         />
