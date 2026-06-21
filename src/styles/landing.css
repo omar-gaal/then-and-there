@@ -1,0 +1,197 @@
+.landing-shell {
+  width: min(1400px, calc(100% - 24px));
+  padding: 12px 0 18px;
+}
+
+.landing-scene {
+  position: relative;
+  min-height: calc(100svh - 30px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--bg-alt);
+  box-shadow: var(--shadow);
+}
+
+.landing-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.landing-vision {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.landing-webcam,
+.landing-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.landing-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(180deg, rgba(246, 247, 243, 0.08), rgba(21, 21, 20, 0.52)),
+    rgba(21, 21, 20, 0.18);
+  backdrop-filter: blur(4px);
+}
+
+.landing-card {
+  max-width: min(560px, 100%);
+  padding: 28px 30px 26px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(16, 18, 18, 0.66);
+  color: #ffffff;
+  text-align: center;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+}
+
+.landing-card .eyebrow {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.landing-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  color: #ffffff;
+  font-size: clamp(2.4rem, 6vw, 5rem);
+  line-height: 0.98;
+}
+
+.landing-copy {
+  max-width: 34ch;
+  margin: 14px auto 18px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1rem;
+}
+
+.landing-card .status-pill {
+  margin: 0 auto;
+}
+
+.landing-actions {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(17, 19, 18, 0.58);
+  backdrop-filter: blur(8px);
+  transform: translateX(-50%);
+}
+
+.landing-button {
+  width: 170px;
+  min-width: 0;
+  min-height: 74px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 14px;
+  color: #ffffff;
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-direction: column;
+  transition:
+    transform 150ms ease,
+    opacity 150ms ease;
+}
+
+.landing-button:hover {
+  transform: translateY(-2px);
+  opacity: 0.92;
+}
+
+.landing-button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.landing-button-label {
+  font-family: var(--font-heading);
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.landing-button-hint {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.landing-button[data-countdown] .landing-button-hint {
+  color: #ffffff;
+}
+
+.landing-button.is-paris {
+  background: var(--paris);
+}
+
+.landing-button.is-amsterdam {
+  background: var(--amsterdam);
+}
+
+.landing-button.is-copenhagen {
+  background: var(--copenhagen);
+}
+
+@media (max-width: 720px) {
+  .landing-actions {
+    width: min(440px, calc(100% - 28px));
+    grid-template-columns: 1fr;
+  }
+
+  .landing-button {
+    width: 100%;
+    min-height: 58px;
+  }
+}
+
+.landing-cursor {
+  position: absolute;
+  left: var(--cx);
+  top: var(--cy);
+  z-index: 4;
+  width: 54px;
+  height: 54px;
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  border-radius: 999px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0.02)
+  );
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.24),
+    0 0 0 10px rgba(255, 255, 255, 0.08);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.landing-cursor::before {
+  content: "";
+  position: absolute;
+  inset: 28%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+}
