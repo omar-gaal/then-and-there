@@ -1,0 +1,627 @@
+.amsterdam-bg {
+  background-image: url("/amsterdam background/amsterdam-downtown.png");
+  background-color: #f6efe5;
+  background-size: 100vw auto;
+  background-position: center 30%;
+}
+.city-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.city-switcher strong {
+  color: var(--text-strong);
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+}
+
+.city-switcher div {
+  display: flex;
+  gap: 6px;
+}
+
+.city-switcher button,
+.jump-test-button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.city-switcher button[data-active="true"] {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #ffffff;
+}
+
+.amsterdam-stage {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 420px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    url("/amsterdam background/back-houses.png") center 60% / cover no-repeat,
+    linear-gradient(180deg, #b8ddf5 0%, #d8eefa 55%, #eef7fd 100%);
+  box-shadow: var(--shadow);
+}
+
+.canal-sky,
+.canal-water {
+  display: none;
+}
+
+.amsterdam-ground {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 2;
+  height: 37%;
+  background:
+    url("/amsterdam background/ground-amsterdam.png") center top / 100% auto no-repeat,
+    #c8b898;
+  pointer-events: none;
+}
+
+.tulip-track {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.tulip-obstacle {
+  position: absolute;
+  left: var(--x);
+  bottom: 22.5%;
+  width: 130px;
+  aspect-ratio: 1;
+  transform: translateX(-50%) scale(var(--scale));
+}
+
+.tulip-obstacle img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.runner {
+  position: absolute;
+  z-index: 4;
+  left: 20%;
+  bottom: 28%;
+  width: 50px;
+  height: 105px;
+  filter: drop-shadow(0 9px 5px rgba(0, 0, 0, 0.25));
+  transition: bottom 45ms linear;
+}
+
+.runner span {
+  position: absolute;
+  display: block;
+  background: #183e48;
+}
+.runner-head {
+  top: 0;
+  left: 15px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+.runner-body {
+  top: 25px;
+  left: 18px;
+  width: 18px;
+  height: 48px;
+  border-radius: 9px;
+}
+.runner-arm {
+  top: 30px;
+  left: 20px;
+  width: 7px;
+  height: 26px;
+  border-radius: 6px;
+  transform-origin: top center;
+}
+.runner-arm-a {
+  transform: rotate(32deg);
+}
+.runner-arm-b {
+  transform: rotate(-22deg);
+}
+.runner-leg {
+  top: 67px;
+  left: 20px;
+  width: 8px;
+  height: 38px;
+  border-radius: 8px;
+  transform-origin: top;
+}
+.runner-leg-a {
+  transform: rotate(15deg);
+}
+.runner-leg-b {
+  transform: rotate(-20deg);
+}
+
+.pose-preview {
+  position: absolute;
+  z-index: 5;
+  right: 14px;
+  bottom: 14px;
+  width: 150px;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  border-radius: 8px;
+  background: #151514;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+}
+
+.pose-webcam,
+.pose-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.pose-webcam {
+  opacity: 0.55;
+}
+
+.copenhagen-pose-preview {
+  left: auto;
+  right: 16px;
+  bottom: 16px;
+  z-index: 13;
+  width: clamp(220px, 18vw, 280px);
+  min-width: 0;
+  aspect-ratio: 16 / 9;
+  background: #151514;
+}
+
+.copenhagen-pose-preview[data-calibrating="true"] {
+  width: clamp(240px, 18vw, 280px);
+}
+
+.copenhagen-pose-preview .pose-webcam,
+.copenhagen-pose-preview .pose-canvas {
+  object-fit: contain;
+}
+
+.copenhagen-pose-preview .pose-webcam {
+  opacity: 0.72;
+}
+
+.copenhagen-index-tip-dot {
+  position: fixed;
+  z-index: 20000;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 220, 93, 0.95);
+  transform: translate(-50%, -50%);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.copenhagen-fingertip-progress-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 999999;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: conic-gradient(
+    #ffdc5d calc(var(--hold-progress) * 1turn),
+    rgba(255, 255, 255, 0.35) 0
+  );
+  transform: translate(-50%, -50%);
+  -webkit-mask: radial-gradient(circle, transparent 0 32px, #000 33px);
+  mask: radial-gradient(circle, transparent 0 32px, #000 33px);
+  pointer-events: none;
+}
+
+.pose-preview span {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 5px 7px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.calibration-card {
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  top: 50%;
+  width: min(310px, calc(100% - 32px));
+  padding: 22px;
+  border-radius: 12px;
+  background: #2a2520;
+  color: #ffffff;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.calibration-card strong,
+.calibration-card span {
+  display: block;
+}
+.calibration-card strong {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 400;
+}
+.calibration-card span {
+  margin: 4px 0 14px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+}
+.calibration-card div {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.calibration-card i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--teal);
+  transition: width 100ms linear;
+}
+
+.copenhagen-calibration-card {
+  z-index: 14;
+  width: min(360px, calc(100% - 32px));
+  padding: 26px 28px 24px;
+  border-radius: 16px;
+  background: #262522;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.34);
+}
+
+.copenhagen-calibration-card strong {
+  font-family: var(--font-heading);
+  font-size: clamp(2.1rem, 4vw, 3rem);
+  line-height: 0.95;
+}
+
+.copenhagen-calibration-card span {
+  margin: 10px 0 16px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.88rem;
+  font-weight: 760;
+}
+
+.copenhagen-calibration-card .copenhagen-calibration-progress-track {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.jump-test-button {
+  position: absolute;
+  z-index: 6;
+  left: 14px;
+  bottom: 14px;
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(21, 21, 20, 0.72);
+  color: #ffffff;
+}
+
+.panel-tip {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(31, 187, 166, 0.1);
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+/* Jump bar */
+.jump-bar-wrap {
+  padding: 8px 0 4px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.jump-bar-label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.jump-bar-track {
+  position: relative;
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.jump-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition:
+    width 60ms linear,
+    background 60ms linear;
+}
+
+.jump-bar-threshold {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* Hover-to-start zone */
+.hover-zone {
+  position: relative;
+  width: 170px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin: 4px 0 8px;
+}
+
+.hover-zone[data-variant="start"] {
+  width: 200px;
+  height: 56px;
+}
+
+.post-round-actions .hover-zone {
+  margin: 0;
+}
+
+.hover-ring {
+  position: absolute;
+  inset: -8px;
+  width: calc(100% + 16px);
+  height: calc(100% + 16px);
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.hover-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 5;
+}
+
+.hover-ring-fill {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 276.5;
+  stroke-dashoffset: calc(276.5 - var(--progress, 0));
+  transition: stroke-dashoffset 80ms linear;
+}
+
+.hover-start-btn {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: var(--text-strong);
+  color: #fff;
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    transform 150ms ease;
+}
+
+.hover-start-btn:hover {
+  transform: scale(1.04);
+}
+
+.hover-start-btn:hover {
+  background: var(--teal-dark);
+  transform: scale(1.05);
+}
+
+.hover-zone[data-variant="start"] .hover-start-btn {
+  background: var(--teal);
+  color: #ffffff;
+}
+
+.hover-zone[data-variant="start"] .hover-start-btn:hover {
+  background: var(--teal-dark);
+}
+
+.hover-zone[data-variant="map"] .hover-start-btn {
+  background: var(--bg);
+  color: var(--text-strong);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+}
+
+.hover-zone[data-variant="map"] .hover-start-btn:hover {
+  background: var(--bg-alt);
+  border-color: var(--text-strong);
+}
+
+.hover-zone[data-variant="again"] .hover-start-btn {
+  background: var(--amber);
+  color: var(--text-strong);
+}
+
+.hover-hint {
+  margin: 0 !important;
+  font-size: 0.76rem !important;
+  opacity: 0.7;
+}
+
+@media (max-width: 880px) {
+  .amsterdam-stage {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .city-switcher {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .amsterdam-stage {
+    aspect-ratio: 3 / 4;
+  }
+  .pose-preview {
+    width: 112px;
+  }
+  .tulip-obstacle {
+    bottom: 22%;
+    width: 74px;
+  }
+  .runner {
+    bottom: 26%;
+  }
+}
+
+.runner[data-jumping="true"] .runner-leg-a {
+  transform: rotate(48deg);
+}
+
+.runner[data-jumping="true"] .runner-leg-b {
+  transform: rotate(-48deg);
+}
+
+.runner-shadow {
+  position: absolute;
+  z-index: 3;
+  left: calc(20% + 25px);
+  bottom: 27.5%;
+  width: 64px;
+  height: 13px;
+  border-radius: 50%;
+  background: rgba(19, 45, 51, var(--shadow-opacity));
+  filter: blur(4px);
+  transform: translateX(-50%) scaleX(var(--shadow-scale));
+  transform-origin: center;
+  transition:
+    transform 45ms linear,
+    background-color 45ms linear;
+}
+
+.pre-round-count {
+  font-size: 5rem !important;
+  line-height: 1 !important;
+}
+
+@keyframes runner-container-jump {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-300px) rotate(-6deg);
+  }
+}
+
+@keyframes runner-shadow-jump {
+  0%,
+  100% {
+    transform: translateX(-50%) scaleX(var(--shadow-scale));
+  }
+  50% {
+    transform: translateX(-50%) translateY(-240px)
+      scaleX(calc(var(--shadow-scale) * 0.6));
+  }
+}
+
+.runner[data-jumping="true"] {
+  animation: runner-container-jump 1.75s ease-in-out;
+  filter: drop-shadow(0 28px 12px rgba(0, 0, 0, 0.1));
+}
+
+.amsterdam-stage:has(.runner[data-jumping="true"]) .runner-shadow {
+  animation: runner-shadow-jump 1.75s ease-in-out;
+}
+
+.runner[data-jumping="true"] .runner-head {
+  transform: translate(3px, -2px) rotate(6deg);
+}
+
+.runner[data-jumping="true"] .runner-body {
+  transform: rotate(6deg) scaleY(1.1) translateY(-4px);
+}
+
+.runner[data-jumping="true"] .runner-arm-a {
+  transform: translate(-5px, -14px) rotate(-55deg);
+}
+
+.runner[data-jumping="true"] .runner-arm-b {
+  transform: translate(6px, -10px) rotate(62deg);
+}
+
+.runner[data-jumping="true"] .runner-leg-a {
+  transform: translate(-4px, -6px) rotate(78deg);
+}
+
+.runner[data-jumping="true"] .runner-leg-b {
+  transform: translate(8px, -4px) rotate(-68deg);
+}
+
+.runner,
+.runner-head,
+.runner-body,
+.runner-arm,
+.runner-leg {
+  transition:
+    bottom 32ms linear,
+    transform 120ms ease-out,
+    filter 120ms ease-out;
+}
+
+@media (max-width: 560px) {
+  .runner-shadow {
+    bottom: 25.5%;
+  }
+
+  @keyframes runner-container-jump {
+    0%,
+    100% {
+      transform: translateY(0) rotate(0);
+    }
+    50% {
+      transform: translateY(-240px) rotate(-6deg);
+    }
+  }
+}
