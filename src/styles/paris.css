@@ -65,7 +65,7 @@
   left: var(--x);
   top: var(--y);
   z-index: 7;
-  width: clamp(200px, 40vw, 428px);
+  width: clamp(100px, 20vw, 228px);
   aspect-ratio: 1;
   display: flex;
   align-items: center;

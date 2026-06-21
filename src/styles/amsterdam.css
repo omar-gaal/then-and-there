@@ -69,7 +69,8 @@
   z-index: 2;
   height: 37%;
   background:
-    url("/amsterdam background/ground-amsterdam.png") center top / 100% auto no-repeat,
+    url("/amsterdam background/ground-amsterdam.png") center top / 100% auto
+      no-repeat,
     #c8b898;
   pointer-events: none;
 }
