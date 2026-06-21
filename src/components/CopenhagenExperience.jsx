@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Webcam from "react-webcam";
 import completedBicycleIllustration from "../assets/copenhagen-bicycle-postcard.svg";
 import { BIKE_PARTS } from "../game/bikeParts";
-import { VIDEO_CONSTRAINTS } from "../handTracking";
+import { READY_STATUS, VIDEO_CONSTRAINTS } from "../handTracking";
 import { partToMapMarker } from "../game/mapMarkers";
 import { useCopenhagenTracking } from "../hooks/useCopenhagenTracking";
 import { useMapGestureToggle } from "../hooks/useMapGestureToggle";
@@ -40,6 +40,8 @@ const DEFAULT_MAP_DATA = {
 
 const FINAL_PICKUP_DELAY_MS = 1200;
 const CELEBRATION_DURATION_MS = 2100;
+const COPENHAGEN_CALIBRATION_FRAMES = 60;
+const COPENHAGEN_START_HOLD_MS = 3000;
 
 const GUIDE_STEPS = {
   HIDDEN: "hidden",
@@ -180,14 +182,22 @@ const DEFAULT_WORLD_DEBUG = {
   yawInfluence: 0.04,
 };
 
-export function CopenhagenExperience({ onBackToCities }) {
+export function CopenhagenExperience({
+  indexTip,
+  onBackToCities,
+}) {
   const completionTriggeredRef = useRef(false);
   const finalPickupTimerRef = useRef(0);
   const postcardTimerRef = useRef(0);
+  const streetFrameRef = useRef(null);
   const turnGuideStartHeadingRef = useRef(null);
   const walkingDetectedAtRef = useRef(0);
   const walkStartWorldZRef = useRef(null);
+  const calibrationFrameRef = useRef(0);
+  const calibrationRafRef = useRef(0);
   const [isMapOpen, setIsMapOpen] = useState(false);
+  const [onboardingPhase, setOnboardingPhase] = useState("start");
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [guideStep, setGuideStep] = useState(GUIDE_STEPS.WALK);
   const [, setGuideCompletedWalk] = useState(false);
   const [, setGuideCompletedLeft] = useState(false);
@@ -200,6 +210,7 @@ export function CopenhagenExperience({ onBackToCities }) {
   const [completionFact, setCompletionFact] = useState("");
   const [postcardVisible, setPostcardVisible] = useState(false);
   const [runResetKey, setRunResetKey] = useState(0);
+  const [fingerHoldProgress, setFingerHoldProgress] = useState(0);
   const [mapData, setMapData] = useState(DEFAULT_MAP_DATA);
   const [worldDebug, setWorldDebug] = useState(DEFAULT_WORLD_DEBUG);
   const [pickupDebug, setPickupDebug] = useState({
@@ -225,15 +236,45 @@ export function CopenhagenExperience({ onBackToCities }) {
     tracking,
     webcamRef,
   } = useCopenhagenTracking();
+  const isGameplayActive = onboardingPhase === "playing";
+  const sceneTracking = isGameplayActive ? tracking : READY_STATUS;
   const toggleMap = useCallback(() => {
     setIsMapOpen((current) => !current);
   }, []);
   useMapGestureToggle({
     onToggle: toggleMap,
-    pose: tracking.pose,
+    pose: sceneTracking.pose,
   });
   const completionActive = completionPhase !== "idle" && completionPhase !== "dismissed";
-  const activeGuideStep = isRunning && !completionActive ? guideStep : GUIDE_STEPS.HIDDEN;
+  const activeGuideStep = isGameplayActive && !completionActive ? guideStep : GUIDE_STEPS.HIDDEN;
+  const mirroredIndexTip = true;
+  const viewportSize = useViewportSize();
+  const renderedIndexTipPoint = useMemo(
+    () => getRenderedIndexTipPoint(indexTip, viewportSize, mirroredIndexTip),
+    [indexTip, mirroredIndexTip, viewportSize],
+  );
+  const showFingerCursorUi = onboardingPhase === "start" || postcardVisible;
+
+  useEffect(() => {
+    if (!showFingerCursorUi) {
+      const resetFrameId = window.requestAnimationFrame(() => {
+        setFingerHoldProgress(0);
+      });
+
+      return () => {
+        window.cancelAnimationFrame(resetFrameId);
+      };
+    }
+
+    return undefined;
+  }, [showFingerCursorUi]);
+
+  const handleStartGame = useCallback(() => {
+    setOnboardingPhase("calibrating");
+    setCalibrationProgress(0);
+    calibrationFrameRef.current = 0;
+    startCamera();
+  }, [startCamera]);
 
   const clearCompletionTimers = useCallback(() => {
     window.clearTimeout(finalPickupTimerRef.current);
@@ -249,6 +290,9 @@ export function CopenhagenExperience({ onBackToCities }) {
     setPostcardVisible(false);
     setCompletionFact("");
     setIsMapOpen(false);
+    setOnboardingPhase("playing");
+    setCalibrationProgress(1);
+    calibrationFrameRef.current = COPENHAGEN_CALIBRATION_FRAMES;
     setMapData(DEFAULT_MAP_DATA);
     turnGuideStartHeadingRef.current = null;
     walkingDetectedAtRef.current = 0;
@@ -281,6 +325,51 @@ export function CopenhagenExperience({ onBackToCities }) {
     setPostcardVisible(false);
     onBackToCities?.();
   }, [clearCompletionTimers, onBackToCities]);
+
+  useEffect(() => {
+    if (onboardingPhase !== "calibrating") {
+      window.cancelAnimationFrame(calibrationRafRef.current);
+      return;
+    }
+
+    function updateCalibrationProgress() {
+      const hipsVisible = hasVisibleHips(tracking);
+      const bodyInFrame = hasVisibleFullBody(tracking);
+      const standingStill = getStandingStillForCalibration(tracking);
+      const canAdvance =
+        bodyInFrame &&
+        hipsVisible &&
+        standingStill;
+
+      if (canAdvance) {
+        calibrationFrameRef.current = Math.min(
+          COPENHAGEN_CALIBRATION_FRAMES,
+          calibrationFrameRef.current + 1,
+        );
+      } else {
+        calibrationFrameRef.current = Math.max(0, calibrationFrameRef.current - 3);
+      }
+
+      const nextProgress = calibrationFrameRef.current / COPENHAGEN_CALIBRATION_FRAMES;
+      setCalibrationProgress(nextProgress);
+
+      if (calibrationFrameRef.current >= COPENHAGEN_CALIBRATION_FRAMES) {
+        resetBodyLeanCenter();
+        setOnboardingPhase("playing");
+        return;
+      }
+
+      calibrationRafRef.current = window.requestAnimationFrame(updateCalibrationProgress);
+    }
+
+    calibrationRafRef.current = window.requestAnimationFrame(updateCalibrationProgress);
+
+    return () => window.cancelAnimationFrame(calibrationRafRef.current);
+  }, [
+    onboardingPhase,
+    resetBodyLeanCenter,
+    tracking,
+  ]);
 
   const handlePickupDebug = useCallback((nextPickupDebug) => {
     setPickupDebug(nextPickupDebug);
@@ -326,7 +415,7 @@ export function CopenhagenExperience({ onBackToCities }) {
   }, [toggleMap]);
 
   useEffect(() => {
-    if (!isRunning || completionActive) {
+    if (!isGameplayActive || completionActive) {
       return undefined;
     }
 
@@ -373,7 +462,7 @@ export function CopenhagenExperience({ onBackToCities }) {
   }, [
     completionActive,
     guideStep,
-    isRunning,
+    isGameplayActive,
     tracking.motion?.leanLeft,
     tracking.motion?.leanRight,
     tracking.motion?.walking,
@@ -402,7 +491,7 @@ export function CopenhagenExperience({ onBackToCities }) {
   }, [guideStep, isMapOpen]);
 
   useEffect(() => {
-    if (!isRunning || completionActive || pickupGuideCompleted || guideStep !== GUIDE_STEPS.HIDDEN) {
+    if (!isGameplayActive || completionActive || pickupGuideCompleted || guideStep !== GUIDE_STEPS.HIDDEN) {
       return undefined;
     }
 
@@ -416,7 +505,7 @@ export function CopenhagenExperience({ onBackToCities }) {
   }, [
     completionActive,
     guideStep,
-    isRunning,
+    isGameplayActive,
     pickupDebug.gestureState,
     pickupDebug.nearbyPart,
     pickupGuideCompleted,
@@ -450,7 +539,7 @@ export function CopenhagenExperience({ onBackToCities }) {
   }, [pickupDebug.parts, pickupGuideCompleted]);
 
   useEffect(() => {
-    if (!isRunning || completionActive || turnGuideCompleted || guideStep !== GUIDE_STEPS.HIDDEN) {
+    if (!isGameplayActive || completionActive || turnGuideCompleted || guideStep !== GUIDE_STEPS.HIDDEN) {
       return undefined;
     }
 
@@ -467,7 +556,7 @@ export function CopenhagenExperience({ onBackToCities }) {
   }, [
     completionActive,
     guideStep,
-    isRunning,
+    isGameplayActive,
     turnGuideCompleted,
     worldDebug.currentAreaId,
     worldDebug.playerWorldZ,
@@ -525,7 +614,7 @@ export function CopenhagenExperience({ onBackToCities }) {
       </header>
 
       <section className="copenhagen-game" aria-label="Copenhagen bike part game">
-        <div className="street-frame">
+        <div className="street-frame" ref={streetFrameRef}>
           <ThreeStreetScene
             completionPhase={completionPhase}
             guideStep={activeGuideStep}
@@ -535,21 +624,32 @@ export function CopenhagenExperience({ onBackToCities }) {
             onWorldDebug={setWorldDebug}
             isMapOpen={isMapOpen}
             resetRunKey={runResetKey}
-            tracking={tracking}
+            tracking={sceneTracking}
           />
 
+          {showFingerCursorUi && (
+            <CopenhagenIndexTipDot
+              renderedPoint={renderedIndexTipPoint}
+              holdProgress={fingerHoldProgress}
+            />
+          )}
+
           {isRunning && !postcardVisible && (
-            <div className="webcam-preview">
+            <div
+              className="pose-preview copenhagen-pose-preview"
+              data-calibrating={onboardingPhase === "calibrating" ? "true" : undefined}
+            >
               <Webcam
                 ref={webcamRef}
                 audio={false}
-                className="webcam-feed"
+                className="pose-webcam"
                 onUserMedia={handleCameraReady}
                 onUserMediaError={handleCameraError}
                 playsInline
                 videoConstraints={VIDEO_CONSTRAINTS}
               />
-              <canvas ref={canvasRef} className="landmark-layer" aria-hidden="true" />
+              <canvas ref={canvasRef} className="pose-canvas" aria-hidden="true" />
+              <span>{onboardingPhase === "calibrating" ? "Stand still to calibrate" : tracking.label}</span>
             </div>
           )}
 
@@ -622,17 +722,25 @@ export function CopenhagenExperience({ onBackToCities }) {
 
           {isMapOpen && <TownMap mapData={mapData} onClose={() => setIsMapOpen(false)} />}
 
-          {!isRunning && (
+          {onboardingPhase === "start" && (
             <CopenhagenStartOverlay
+              fingertipPoint={renderedIndexTipPoint}
               isLoading={isLoading}
-              onStartCamera={startCamera}
+              onHoldProgressChange={setFingerHoldProgress}
+              onStartGame={handleStartGame}
             />
+          )}
+
+          {onboardingPhase === "calibrating" && (
+            <CopenhagenCalibrationOverlay progress={calibrationProgress} />
           )}
 
           {postcardVisible && (
             <CopenhagenResultOverlay
               completionFact={completionFact}
+              fingertipPoint={renderedIndexTipPoint}
               onBackToCities={handleResultBackToCities}
+              onHoldProgressChange={setFingerHoldProgress}
               onPlayAgain={handlePlayAgain}
             />
           )}
@@ -646,10 +754,92 @@ export function CopenhagenExperience({ onBackToCities }) {
   );
 }
 
-function CopenhagenStartOverlay({
-  isLoading,
-  onStartCamera,
+function CopenhagenIndexTipDot({
+  holdProgress,
+  renderedPoint,
 }) {
+  const normalizedHoldProgress = normalizeHoldProgress(holdProgress);
+
+  return (
+    renderedPoint && (
+      <div
+        className="copenhagen-index-tip-dot"
+        style={{
+          left: `${renderedPoint.x}px`,
+          top: `${renderedPoint.y}px`,
+        }}
+      >
+        {holdProgress > 0 && (
+          <div
+            className="copenhagen-fingertip-progress-ring"
+            style={{ "--hold-progress": normalizedHoldProgress }}
+            aria-hidden="true"
+          />
+        )}
+      </div>
+    )
+  );
+}
+
+function normalizeHoldProgress(holdProgress) {
+  if (!Number.isFinite(holdProgress)) {
+    return 0;
+  }
+
+  const normalizedProgress = holdProgress > 1 ? holdProgress / 100 : holdProgress;
+
+  return Math.min(Math.max(normalizedProgress, 0), 1);
+}
+
+function useViewportSize() {
+  const [viewportSize, setViewportSize] = useState(() => getViewportSize());
+
+  useEffect(() => {
+    function updateViewportSize() {
+      setViewportSize(getViewportSize());
+    }
+
+    updateViewportSize();
+    window.addEventListener("resize", updateViewportSize);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportSize);
+    };
+  }, []);
+
+  return viewportSize;
+}
+
+function getViewportSize() {
+  if (typeof window === "undefined") {
+    return { height: 0, width: 0 };
+  }
+
+  return {
+    height: window.innerHeight,
+    width: window.innerWidth,
+  };
+}
+
+function getRenderedIndexTipPoint(indexTip, viewportSize, mirrored) {
+  if (!indexTip) {
+    return null;
+  }
+
+  return {
+    x: (mirrored ? 1 - indexTip.x : indexTip.x) * viewportSize.width,
+    y: indexTip.y * viewportSize.height,
+  };
+}
+
+function CopenhagenStartOverlay({
+  fingertipPoint,
+  isLoading,
+  onHoldProgressChange,
+  onStartGame,
+}) {
+  const [isHolding, setIsHolding] = useState(false);
+
   return (
     <div className="round-overlay copenhagen-start-overlay" aria-live="polite">
       <p className="round-overlay-eyebrow">Copenhagen challenge</p>
@@ -668,24 +858,154 @@ function CopenhagenStartOverlay({
           <li>Stretch your right arm to turn right</li>
         </ul>
       </section>
-      <button
-        type="button"
+      <CopenhagenHoverActionButton
         className="action-btn btn-teal copenhagen-start-button"
-        onClick={onStartCamera}
         disabled={isLoading}
+        fingertipPoint={fingertipPoint}
+        onAction={onStartGame}
+        onHoldActiveChange={setIsHolding}
+        onHoldProgressChange={onHoldProgressChange}
       >
-        {isLoading ? "Loading MediaPipe..." : "Start game"}
-      </button>
-      <p className="hover-hint">Point your body at the camera</p>
+        Start game
+      </CopenhagenHoverActionButton>
+      <p className="hover-hint">
+        {isHolding ? "HOLD STILL..." : "Click Start game, then back up until your body fits the preview"}
+      </p>
+    </div>
+  );
+}
+
+function CopenhagenHoverActionButton({
+  children,
+  className,
+  disabled = false,
+  fingertipPoint,
+  onAction,
+  onHoldActiveChange,
+  onHoldProgressChange,
+}) {
+  const buttonRef = useRef(null);
+  const firedRef = useRef(false);
+  const holdStartedAtRef = useRef(null);
+  const isHoldingRef = useRef(false);
+  const onActionRef = useRef(onAction);
+  const [countdown, setCountdown] = useState(null);
+  const fingertipX = fingertipPoint?.x;
+  const fingertipY = fingertipPoint?.y;
+
+  const resetHold = useCallback(() => {
+    holdStartedAtRef.current = null;
+    firedRef.current = false;
+
+    if (isHoldingRef.current) {
+      isHoldingRef.current = false;
+      onHoldActiveChange?.(false);
+      onHoldProgressChange?.(0);
+    }
+
+    setCountdown(null);
+  }, [onHoldActiveChange, onHoldProgressChange]);
+
+  useEffect(() => {
+    onActionRef.current = onAction;
+  }, [onAction]);
+
+  useEffect(() => {
+    if (disabled || !Number.isFinite(fingertipX) || !Number.isFinite(fingertipY)) {
+      const resetFrameId = window.requestAnimationFrame(resetHold);
+
+      return () => {
+        window.cancelAnimationFrame(resetFrameId);
+      };
+    }
+
+    let frameId = 0;
+
+    function updateHold() {
+      const buttonRect = buttonRef.current?.getBoundingClientRect();
+      const isInside =
+        Boolean(buttonRect) &&
+        fingertipX >= buttonRect.left &&
+        fingertipX <= buttonRect.right &&
+        fingertipY >= buttonRect.top &&
+        fingertipY <= buttonRect.bottom;
+
+      if (!isInside) {
+        resetHold();
+        frameId = window.requestAnimationFrame(updateHold);
+        return;
+      }
+
+      if (!isHoldingRef.current) {
+        isHoldingRef.current = true;
+        onHoldActiveChange?.(true);
+      }
+
+      if (holdStartedAtRef.current === null) {
+        holdStartedAtRef.current = performance.now();
+      }
+
+      const elapsed = performance.now() - holdStartedAtRef.current;
+      const nextProgress = Math.min(elapsed / COPENHAGEN_START_HOLD_MS, 1);
+      onHoldProgressChange?.(nextProgress);
+      setCountdown(Math.max(1, Math.ceil((COPENHAGEN_START_HOLD_MS - elapsed) / 1000)));
+
+      if (elapsed >= COPENHAGEN_START_HOLD_MS && !firedRef.current) {
+        firedRef.current = true;
+        resetHold();
+        onActionRef.current();
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(updateHold);
+    }
+
+    frameId = window.requestAnimationFrame(updateHold);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [disabled, fingertipX, fingertipY, onHoldActiveChange, onHoldProgressChange, resetHold]);
+
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      className={className}
+      disabled={disabled}
+      onClick={onAction}
+    >
+      {countdown ?? children}
+    </button>
+  );
+}
+
+function CopenhagenCalibrationOverlay({ progress }) {
+  const calibrationPercent = Math.round(progress * 100);
+
+  return (
+    <div className="calibration-card copenhagen-calibration-card">
+      <strong>Stand still</strong>
+      <span>Calibrating... {calibrationPercent}%</span>
+      <div
+        className="copenhagen-calibration-progress-track"
+        style={{
+          background: `linear-gradient(90deg, #2dbfad 0%, #2dbfad ${calibrationPercent}%, rgba(255,255,255,0.18) ${calibrationPercent}%, rgba(255,255,255,0.18) 100%)`,
+        }}
+      />
     </div>
   );
 }
 
 function CopenhagenResultOverlay({
   completionFact,
+  fingertipPoint,
   onBackToCities,
+  onHoldProgressChange,
   onPlayAgain,
 }) {
+  const [isHolding, setIsHolding] = useState(false);
+
   return (
     <div className="round-overlay copenhagen-result-overlay" aria-live="polite">
       <p className="round-overlay-eyebrow">Bike complete</p>
@@ -700,18 +1020,62 @@ function CopenhagenResultOverlay({
         <p className="fun-fact-text">{completionFact}</p>
       </div>
       <div className="post-round-actions copenhagen-result-actions">
-        <button type="button" className="action-btn btn-amber" onClick={onPlayAgain}>
+        <CopenhagenHoverActionButton
+          className="action-btn btn-amber"
+          fingertipPoint={fingertipPoint}
+          onAction={onPlayAgain}
+          onHoldActiveChange={setIsHolding}
+          onHoldProgressChange={onHoldProgressChange}
+        >
           Play again
-        </button>
-        <button type="button" className="action-btn btn-ghost copenhagen-map-button" onClick={onBackToCities}>
+        </CopenhagenHoverActionButton>
+        <CopenhagenHoverActionButton
+          className="action-btn btn-ghost copenhagen-map-button"
+          fingertipPoint={fingertipPoint}
+          onAction={onBackToCities}
+          onHoldActiveChange={setIsHolding}
+          onHoldProgressChange={onHoldProgressChange}
+        >
           Back to map
-        </button>
+        </CopenhagenHoverActionButton>
       </div>
-      <p className="hover-hint">Choose an option to continue</p>
+      <p className="hover-hint">{isHolding ? "HOLD STILL..." : "Choose an option to continue"}</p>
     </div>
   );
 }
 
 function getAngleDelta(a, b) {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
+}
+
+function hasVisibleFullBody(tracking) {
+  const pose = tracking.pose ?? {};
+  const requiredLandmarks = [
+    pose.leftShoulder,
+    pose.rightShoulder,
+    pose.leftHip,
+    pose.rightHip,
+    pose.leftKnee,
+    pose.rightKnee,
+    pose.leftAnkle,
+    pose.rightAnkle,
+  ];
+
+  return requiredLandmarks.every((landmark) => isVisibleLandmark(landmark));
+}
+
+function isVisibleLandmark(landmark) {
+  return Boolean(landmark) && (landmark.visibility ?? 1) >= 0.45;
+}
+
+function hasVisibleHips(tracking) {
+  const pose = tracking.pose ?? {};
+  return isVisibleLandmark(pose.leftHip) && isVisibleLandmark(pose.rightHip);
+}
+
+function getStandingStillForCalibration(tracking) {
+  const motion = tracking.motion ?? {};
+  const motionIntensity = Number.isFinite(motion.motionIntensity) ? motion.motionIntensity : 0;
+
+  return !motion.walking && !motion.bending && motionIntensity < 0.12;
 }

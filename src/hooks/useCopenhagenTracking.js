@@ -24,7 +24,7 @@ const MIN_WALK_SPEED = 0.08
 const KNEE_LIFT_THRESHOLD = 0.04
 const MOTION_INTENSITY_SCALE = 10.5
 
-export function useCopenhagenTracking({ playtestSettings } = {}) {
+export function useCopenhagenTracking({ playtestSettings, sourceWebcamRef } = {}) {
   const webcamRef = useRef(null)
   const canvasRef = useRef(null)
   const puckRef = useRef(null)
@@ -98,13 +98,14 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
   }
 
   function runFrameLoop() {
-    const video = webcamRef.current?.video
+    const video = (sourceWebcamRef?.current ?? webcamRef.current)?.video
     const canvas = canvasRef.current
     const puck = puckRef.current
     const handLandmarker = handLandmarkerRef.current
     const poseLandmarker = poseLandmarkerRef.current
 
     if (!video || !canvas || !puck || !handLandmarker || !poseLandmarker) {
+      animationRef.current = requestAnimationFrame(runFrameLoop)
       return
     }
 
@@ -190,6 +191,8 @@ export function useCopenhagenTracking({ playtestSettings } = {}) {
 
       setIsRunning(true)
       setTracking(createSearchingStatus())
+      cancelAnimationFrame(animationRef.current)
+      animationRef.current = requestAnimationFrame(runFrameLoop)
     } catch (error) {
       console.error(error)
       stopCamera()

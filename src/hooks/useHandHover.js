@@ -13,6 +13,7 @@ export function useHandHover() {
 
   const [isReady, setIsReady] = useState(false)
   const [fingerPos, setFingerPos] = useState(null) // { x, y } normalized 0-1, mirrored
+  const [indexTip, setIndexTip] = useState(null) // { x, y } normalized 0-1, raw MediaPipe landmark 8
 
   const runLoop = useCallback(() => {
     if (!activeRef.current) return
@@ -39,10 +40,12 @@ export function useHandHover() {
       if (landmarks) {
         drawHand(canvas, landmarks)
         const gesture = getHandGesture(landmarks)
+        setIndexTip({ x: gesture.indexTip.x, y: gesture.indexTip.y })
         // Mirror x so hand matches what user sees (like a mirror)
         setFingerPos({ x: 1 - gesture.indexTip.x, y: gesture.indexTip.y })
       } else {
         clearCanvas(canvas)
+        setIndexTip(null)
         setFingerPos(null)
       }
     }
@@ -64,6 +67,7 @@ export function useHandHover() {
     activeRef.current = false
     cancelAnimationFrame(animationRef.current)
     clearCanvas(canvasRef.current)
+    setIndexTip(null)
     setFingerPos(null)
   }, [])
 
@@ -97,5 +101,5 @@ export function useHandHover() {
     }
   }, [])
 
-  return { webcamRef, canvasRef, fingerPos, isReady, stop, resume, handleCameraReady }
+  return { webcamRef, canvasRef, fingerPos, indexTip, isReady, stop, resume, handleCameraReady }
 }
