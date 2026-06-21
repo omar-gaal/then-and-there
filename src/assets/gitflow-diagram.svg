@@ -1,0 +1,86 @@
+<svg width="1400" height="820" viewBox="0 0 1400 820" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="820" rx="28" fill="#F8FAFC"/>
+  <rect x="42" y="42" width="1316" height="736" rx="24" fill="white" stroke="#D8DEE9" stroke-width="2"/>
+
+  <text x="700" y="105" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="800" fill="#111827">Git Flow: main, dev and feature branches</text>
+  <text x="700" y="148" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="22" fill="#4B5563">Work starts on main, moves through dev, then a feature branch, and is merged back when ready.</text>
+
+  <defs>
+    <marker id="arrowMain" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L14 8L2 14V2Z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrowDev" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L14 8L2 14V2Z" fill="#059669"/>
+    </marker>
+    <marker id="arrowFeature" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L14 8L2 14V2Z" fill="#DC2626"/>
+    </marker>
+  </defs>
+
+  <text x="132" y="260" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="800" fill="#1D4ED8">main</text>
+  <text x="145" y="398" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="800" fill="#047857">dev</text>
+  <text x="102" y="536" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="800" fill="#B91C1C">feature</text>
+
+  <line x1="230" y1="250" x2="1185" y2="250" stroke="#2563EB" stroke-width="8" stroke-linecap="round" marker-end="url(#arrowMain)"/>
+  <line x1="350" y1="388" x2="975" y2="388" stroke="#059669" stroke-width="8" stroke-linecap="round" marker-end="url(#arrowDev)"/>
+  <line x1="515" y1="526" x2="810" y2="526" stroke="#DC2626" stroke-width="8" stroke-linecap="round" marker-end="url(#arrowFeature)"/>
+
+  <line x1="305" y1="250" x2="385" y2="388" stroke="#059669" stroke-width="8" stroke-linecap="round"/>
+  <line x1="470" y1="388" x2="550" y2="526" stroke="#DC2626" stroke-width="8" stroke-linecap="round"/>
+  <line x1="825" y1="526" x2="905" y2="388" stroke="#DC2626" stroke-width="8" stroke-linecap="round"/>
+  <line x1="990" y1="388" x2="1070" y2="250" stroke="#059669" stroke-width="8" stroke-linecap="round"/>
+
+  <circle cx="250" cy="250" r="18" fill="#2563EB"/>
+  <circle cx="305" cy="250" r="18" fill="#2563EB"/>
+  <circle cx="1070" cy="250" r="18" fill="#2563EB"/>
+  <circle cx="1190" cy="250" r="18" fill="#2563EB"/>
+
+  <circle cx="385" cy="388" r="18" fill="#059669"/>
+  <circle cx="470" cy="388" r="18" fill="#059669"/>
+  <circle cx="905" cy="388" r="18" fill="#059669"/>
+  <circle cx="990" cy="388" r="18" fill="#059669"/>
+
+  <circle cx="550" cy="526" r="18" fill="#DC2626"/>
+  <circle cx="660" cy="526" r="18" fill="#DC2626"/>
+  <circle cx="825" cy="526" r="18" fill="#DC2626"/>
+
+  <g font-family="Inter, Arial, sans-serif" font-size="20" font-weight="700">
+    <rect x="196" y="190" width="108" height="40" rx="8" fill="#DBEAFE"/>
+    <text x="250" y="217" text-anchor="middle" fill="#1D4ED8">Start</text>
+
+    <rect x="232" y="289" width="146" height="46" rx="8" fill="#E0F2FE"/>
+    <text x="305" y="319" text-anchor="middle" fill="#075985">branch to dev</text>
+
+    <rect x="314" y="424" width="142" height="46" rx="8" fill="#D1FAE5"/>
+    <text x="385" y="454" text-anchor="middle" fill="#047857">dev branch</text>
+
+    <rect x="394" y="292" width="152" height="46" rx="8" fill="#ECFDF5"/>
+    <text x="470" y="322" text-anchor="middle" fill="#047857">work on dev</text>
+
+    <rect x="477" y="562" width="146" height="46" rx="8" fill="#FEE2E2"/>
+    <text x="550" y="592" text-anchor="middle" fill="#B91C1C">new feature</text>
+
+    <rect x="595" y="562" width="130" height="46" rx="8" fill="#FEE2E2"/>
+    <text x="660" y="592" text-anchor="middle" fill="#B91C1C">commits</text>
+
+    <rect x="750" y="562" width="150" height="46" rx="8" fill="#FEE2E2"/>
+    <text x="825" y="592" text-anchor="middle" fill="#B91C1C">merge to dev</text>
+
+    <rect x="831" y="424" width="148" height="46" rx="8" fill="#D1FAE5"/>
+    <text x="905" y="454" text-anchor="middle" fill="#047857">test on dev</text>
+
+    <rect x="916" y="292" width="148" height="46" rx="8" fill="#DBEAFE"/>
+    <text x="990" y="322" text-anchor="middle" fill="#1D4ED8">merge to main</text>
+
+    <rect x="1002" y="190" width="136" height="40" rx="8" fill="#DBEAFE"/>
+    <text x="1070" y="217" text-anchor="middle" fill="#1D4ED8">release</text>
+
+    <rect x="1127" y="190" width="126" height="40" rx="8" fill="#DBEAFE"/>
+    <text x="1190" y="217" text-anchor="middle" fill="#1D4ED8">main updated</text>
+  </g>
+
+  <g font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">
+    <text x="700" y="674" text-anchor="middle">Simple workflow</text>
+  </g>
+  <text x="700" y="710" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="21" fill="#4B5563">main -> dev -> feature -> dev -> main</text>
+</svg>
